@@ -2,65 +2,124 @@ import streamlit as st
 import requests
 import pandas as pd
 import plotly.graph_objects as go
-from datetime import datetime
+from datetime import datetime, timezone
 
 # --- Sayfa Ayarları ---
-st.set_page_config(page_title="Forum Efsanesi v3 - Pro", layout="wide")
+st.set_page_config(
+    page_title="GFS Şehir Analiz", 
+    layout="wide", 
+    initial_sidebar_state="collapsed"
+)
 
-st.title("🌍 GFS Ultimate Analiz İstasyonu")
+# --- CSS (Mobil Uyum) ---
 st.markdown("""
-**Yerel veriler + Küresel Endeksler (AO/NAO).** Forumdaki 'Sistemci' arkadaşlara selam olsun.
-""")
+    <style>
+        .block-container { padding-top: 1rem; padding-bottom: 0rem; padding-left: 1rem; padding-right: 1rem; }
+        h1 { font-size: 1.5rem !important; }
+    </style>
+""", unsafe_allow_html=True)
 
-# --- Sidebar (Ayarlar) ---
-with st.sidebar:
-    st.header("📍 Konum Ayarları")
-    lat = st.number_input("Enlem", value=41.00, format="%.4f")
-    lon = st.number_input("Boylam", value=28.97, format="%.4f")
+st.title("🇹🇷 GFS Şehir Bazlı Analiz")
+st.markdown("İl seç, arkana yaslan, GFS modelini yorumla.")
+
+# --- 81 İL KOORDİNAT LİSTESİ ---
+TR_ILLER = {
+    "Adana": [37.00, 35.32], "Adıyaman": [37.76, 38.28], "Afyonkarahisar": [38.75, 30.54],
+    "Ağrı": [39.72, 43.05], "Aksaray": [38.37, 34.03], "Amasya": [40.65, 35.83],
+    "Ankara": [39.93, 32.85], "Antalya": [36.89, 30.71], "Ardahan": [41.11, 42.70],
+    "Artvin": [41.18, 41.82], "Aydın": [37.84, 27.84], "Balıkesir": [39.65, 27.88],
+    "Bartın": [41.63, 32.34], "Batman": [37.88, 41.13], "Bayburt": [40.26, 40.22],
+    "Bilecik": [40.14, 29.98], "Bingöl": [38.88, 40.49], "Bitlis": [38.40, 42.10],
+    "Bolu": [40.73, 31.61], "Burdur": [37.72, 30.29], "Bursa": [40.18, 29.06],
+    "Çanakkale": [40.15, 26.41], "Çankırı": [40.60, 33.61], "Çorum": [40.55, 34.95],
+    "Denizli": [37.77, 29.09], "Diyarbakır": [37.91, 40.24], "Düzce": [40.84, 31.16],
+    "Edirne": [41.68, 26.56], "Elazığ": [38.68, 39.22], "Erzincan": [39.75, 39.50],
+    "Erzurum": [39.90, 41.27], "Eskişehir": [39.78, 30.52], "Gaziantep": [37.06, 37.38],
+    "Giresun": [40.91, 38.39], "Gümüşhane": [40.46, 39.48], "Hakkari": [37.58, 43.74],
+    "Hatay": [36.40, 36.34], "Iğdır": [39.92, 44.04], "Isparta": [37.76, 30.56],
+    "İstanbul": [41.00, 28.97], "İzmir": [38.42, 27.14], "Kahramanmaraş": [37.58, 36.93],
+    "Karabük": [41.20, 32.62], "Karaman": [37.18, 33.22], "Kars": [40.60, 43.10],
+    "Kastamonu": [41.38, 33.78], "Kayseri": [38.73, 35.49], "Kırıkkale": [39.85, 33.51],
+    "Kırklareli": [41.73, 27.22], "Kırşehir": [39.15, 34.17], "Kilis": [36.71, 37.11],
+    "Kocaeli": [40.85, 29.88], "Konya": [37.87, 32.48], "Kütahya": [39.42, 29.98],
+    "Malatya": [38.35, 38.31], "Manisa": [38.61, 27.43], "Mardin": [37.32, 40.74],
+    "Mersin": [36.80, 34.64], "Muğla": [37.21, 28.36], "Muş": [38.74, 41.49],
+    "Nevşehir": [38.62, 34.71], "Niğde": [37.97, 34.68], "Ordu": [40.98, 37.88],
+    "Osmaniye": [37.07, 36.25], "Rize": [41.02, 40.52], "Sakarya": [40.77, 30.40],
+    "Samsun": [41.29, 36.33], "Siirt": [37.93, 41.94], "Sinop": [42.03, 35.15],
+    "Sivas": [39.75, 37.02], "Şanlıurfa": [37.16, 38.79], "Şırnak": [37.52, 42.46],
+    "Tekirdağ": [40.98, 27.51], "Tokat": [40.31, 36.55], "Trabzon": [41.00, 39.72],
+    "Tunceli": [39.11, 39.55], "Uşak": [38.68, 29.41], "Van": [38.50, 43.38],
+    "Yalova": [40.65, 29.27], "Yozgat": [39.82, 34.81], "Zonguldak": [41.45, 31.79]
+}
+
+# --- GFS GÜNCELLEME TAHMİNİ ---
+def get_gfs_run_info():
+    # Şu anki UTC saati al
+    now_utc = datetime.now(timezone.utc)
+    hour = now_utc.hour
     
-    st.divider()
-    st.header("📊 Veri Seçimi")
+    # GFS döngüleri: 00, 06, 12, 18 UTC
+    # Verinin işlenip API'ye düşmesi genelde 3-4 saat sürer.
+    if 3 <= hour < 9:
+        run = "00Z (Gece Güncellemesi)"
+    elif 9 <= hour < 15:
+        run = "06Z (Sabah Güncellemesi)"
+    elif 15 <= hour < 21:
+        run = "12Z (Öğle Güncellemesi)"
+    else:
+        run = "18Z (Akşam Güncellemesi)"
     
-    # Çoklu Seçim Kutusu (Multiselect)
+    return run
+
+# --- KONUM VE AYARLAR ---
+with st.expander("📍 Şehir Seçimi ve Ayarlar", expanded=True):
+    # Sekmeli Yapı: İster listeden seç, ister manuel gir
+    tab_sehir, tab_manuel = st.tabs(["🏙️ İl Listesi", "🗺️ Manuel Koordinat"])
+    
+    with tab_sehir:
+        secilen_il = st.selectbox("Bir İl Seç:", list(TR_ILLER.keys()), index=38) # 38: İstanbul
+        lat_il, lon_il = TR_ILLER[secilen_il]
+    
+    with tab_manuel:
+        col1, col2 = st.columns(2)
+        lat_man = col1.number_input("Enlem", value=41.00)
+        lon_man = col2.number_input("Boylam", value=28.97)
+
+    # Hangi koordinatı kullanacağız?
+    if lat_man != 41.00 or lon_man != 28.97:
+        final_lat, final_lon = lat_man, lon_man
+        konum_adi = f"Manuel ({final_lat}, {final_lon})"
+    else:
+        final_lat, final_lon = lat_il, lon_il
+        konum_adi = secilen_il
+
     secilen_veriler = st.multiselect(
-        "Grafiğe dökmek istediğin verileri seç:",
+        "Grafikler:",
         [
-            "Sıcaklık (2m)", "Sıcaklık (850hPa)", "Sıcaklık (500hPa)",
-            "Kar Yağışı", "Toplam Yağış",
-            "Rüzgar Hızı (10m)", "Rüzgar Hızı (850hPa)", "Jet Akımı (250hPa)",
-            "MSL Basınç (Barometre)", 
-            "CAPE (Oraj Enerjisi)", "Lifted Index",
-            "Toplam Bulutluluk", "Toprak Nemi (0-10cm)"
+            "Sıcaklık (850hPa)", "Kar Yağışı (cm)", "Yağış (mm)",
+            "Sıcaklık (2m)", "Rüzgar (Yerde)", "CAPE (Oraj)", "Basınç"
         ],
-        default=["Sıcaklık (850hPa)", "Kar Yağışı", "MSL Basınç (Barometre)"] # Varsayılanlar
+        default=["Sıcaklık (850hPa)", "Kar Yağışı (cm)"]
     )
-
-    st.divider()
-    st.header("🌐 Teleconnections")
-    show_teleconnections = st.checkbox("AO & NAO Endekslerini Göster", value=True)
     
-    btn_calistir = st.button("Verileri Çek ve Analiz Et 🚀", type="primary")
+    # GÜNCELLEME BİLGİSİ
+    run_info = get_gfs_run_info()
+    st.info(f"🕒 **Tahmini Model Çıktısı:** {run_info} | GFS Seamless")
+    
+    btn_calistir = st.button("Analizi Başlat 🚀", type="primary", use_container_width=True)
 
-# --- Yardımcı Fonksiyonlar ---
-
+# --- FONSİYONLAR ---
 def get_local_data(lat, lon, variables):
-    # Kullanıcının seçtiği Türkçe isimleri API parametrelerine çevirelim
     var_map = {
-        "Sıcaklık (2m)": "temperature_2m",
         "Sıcaklık (850hPa)": "temperature_850hPa",
-        "Sıcaklık (500hPa)": "temperature_500hPa",
-        "Kar Yağışı": "snowfall",
-        "Toplam Yağış": "precipitation",
-        "Rüzgar Hızı (10m)": "windspeed_10m",
-        "Rüzgar Hızı (850hPa)": "windspeed_850hPa",
-        "Jet Akımı (250hPa)": "windspeed_250hPa",
-        "MSL Basınç (Barometre)": "pressure_msl",
-        "CAPE (Oraj Enerjisi)": "cape",
-        "Lifted Index": "lifted_index",
-        "Toplam Bulutluluk": "cloudcover",
-        "Toprak Nemi (0-10cm)": "soil_moisture_0_to_10cm"
+        "Kar Yağışı (cm)": "snowfall",
+        "Yağış (mm)": "precipitation",
+        "Sıcaklık (2m)": "temperature_2m",
+        "Rüzgar (Yerde)": "windspeed_10m",
+        "CAPE (Oraj)": "cape",
+        "Basınç": "pressure_msl"
     }
-    
     api_vars = [var_map[v] for v in variables]
     
     url = "https://ensemble-api.open-meteo.com/v1/ensemble"
@@ -71,145 +130,62 @@ def get_local_data(lat, lon, variables):
         "timezone": "auto"
     }
     try:
-        r = requests.get(url, params=params, timeout=10)
+        r = requests.get(url, params=params, timeout=15)
         r.raise_for_status()
         return r.json(), var_map
-    except Exception as e:
-        st.error(f"Yerel veri hatası: {e}")
+    except:
         return None, None
 
-def fetch_noaa_index(index_type="ao"):
-    # NOAA CPC'den ham metin verisini çekip parse eder
-    # index_type: 'ao', 'nao', 'pna'
-    base_url = "https://www.cpc.ncep.noaa.gov/products/precip/CWlink"
-    if index_type == "ao":
-        url = f"{base_url}/daily_ao_index/ao.sprd2.dat"
-    elif index_type == "nao":
-        url = f"{base_url}/pna/nao.sprd2.dat"
-    elif index_type == "pna":
-        url = f"{base_url}/pna/pna.sprd2.dat"
-    
-    try:
-        # Pandas ile boşlukla ayrılmış dosyayı okuyalım
-        # NOAA formatı: YIL AY GÜN INDEX_DEĞERİ ...
-        df = pd.read_csv(url, delim_whitespace=True, header=None, engine='python')
-        
-        # Son 120 günü alalım (Geçmiş + Gelecek tahminleri içerir)
-        df = df.tail(120).reset_index(drop=True)
-        
-        # Tarih sütunu oluştur
-        df['Date'] = pd.to_datetime(df[[0, 1, 2]].astype(str).agg('-'.join, axis=1), format='%Y-%m-%d')
-        df.columns = ['Year', 'Month', 'Day', 'Index', 'Spread1', 'Spread2', 'Spread3', 'Date']
-        
-        return df
-    except Exception as e:
-        # NOAA bazen sunucuları kapatır veya format değiştirir
-        return None
-
-# --- ANA AKIŞ ---
+# --- ANA İŞLEM ---
 if btn_calistir:
-    
-    # 1. YEREL VERİLERİ İŞLE
-    with st.spinner('Model verileri işleniyor...'):
-        data, mapping = get_local_data(lat, lon, secilen_veriler)
-        
-        if data:
-            hourly = data['hourly']
-            time = pd.to_datetime(hourly['time'])
+    if not secilen_veriler:
+        st.error("Grafik seçimi yapmalısın.")
+    else:
+        with st.spinner(f'{konum_adi} için GFS verileri çekiliyor...'):
+            data, mapping = get_local_data(final_lat, final_lon, secilen_veriler)
             
-            # Seçilen her veri türü için ayrı bir grafik çizelim
-            st.subheader(f"📍 Yerel Analiz ({lat}, {lon})")
-            
-            for secim in secilen_veriler:
-                api_kod = mapping[secim]
-                fig = go.Figure()
+            if data:
+                hourly = data['hourly']
+                time = pd.to_datetime(hourly['time'])
                 
-                # İlgili senaryoları bul (member01, member02...)
-                cols = [k for k in hourly.keys() if k.startswith(api_kod) and 'member' in k]
-                
-                # Spaghettileri ekle
-                for member in cols:
-                    fig.add_trace(go.Scatter(
-                        x=time, y=hourly[member],
-                        mode='lines', line=dict(color='gray', width=1),
-                        opacity=0.3, showlegend=False, hoverinfo='skip'
-                    ))
-                
-                # Ortalamayı ekle
-                if cols:
-                    df_m = pd.DataFrame(hourly)[cols]
-                    mean_val = df_m.mean(axis=1)
-                    fig.add_trace(go.Scatter(
-                        x=time, y=mean_val,
-                        mode='lines', line=dict(color='cyan', width=3),
-                        name=f'Ortalama {secim}'
-                    ))
-                
-                # Başlık ve birim ayarları
-                fig.update_layout(
-                    title=f"📈 {secim} Senaryoları",
-                    template="plotly_dark",
-                    height=350,
-                    margin=dict(l=20, r=20, t=40, b=20)
-                )
-                st.plotly_chart(fig, use_container_width=True)
+                for secim in secilen_veriler:
+                    api_kod = mapping[secim]
+                    fig = go.Figure()
+                    cols = [k for k in hourly.keys() if k.startswith(api_kod) and 'member' in k]
+                    
+                    # Senaryolar
+                    for member in cols:
+                        fig.add_trace(go.Scatter(
+                            x=time, y=hourly[member],
+                            mode='lines', line=dict(color='lightgrey', width=0.5),
+                            opacity=0.5, showlegend=False, hoverinfo='skip'
+                        ))
+                    
+                    # Ortalama
+                    if cols:
+                        df_m = pd.DataFrame(hourly)[cols]
+                        mean_val = df_m.mean(axis=1)
+                        c = 'cyan'
+                        if "Sıcaklık" in secim: c = 'orange'
+                        elif "Kar" in secim: c = 'white'
+                        elif "CAPE" in secim: c = 'yellow'
+                        
+                        fig.add_trace(go.Scatter(
+                            x=time, y=mean_val,
+                            mode='lines', line=dict(color=c, width=2.5),
+                            name='Ortalama'
+                        ))
+                    
+                    # Kritik Çizgiler
+                    if "850hPa" in secim:
+                         fig.add_hline(y=-8, line_dash="dash", line_color="blue", opacity=0.5)
 
-    # 2. TELECONNECTIONS (AO / NAO / PNA)
-    if show_teleconnections:
-        st.divider()
-        st.subheader("🌐 Küresel Endeksler (NOAA CPC Canlı Veri)")
-        st.markdown("Negatif AO/NAO genelde Akdeniz çanağına sistem inmesine yardımcı olur (Kışın). Pozitif indeksler yüksek basınç (blokaj) getirebilir.")
-        
-        col_ao, col_nao, col_pna = st.tabs(["Arctic Oscillation (AO)", "North Atlantic Oscillation (NAO)", "PNA"])
-        
-        # AO Grafiği
-        with col_ao:
-            df_ao = fetch_noaa_index("ao")
-            if df_ao is not None:
-                fig_ao = go.Figure()
-                # Geçmiş veriyi ve tahmini ayıralım (Basit yaklaşım: Son tarih bugünden büyükse tahmindir)
-                fig_ao.add_trace(go.Bar(
-                    x=df_ao['Date'], y=df_ao['Index'],
-                    marker_color=df_ao['Index'].apply(lambda x: 'red' if x < 0 else 'blue'),
-                    name='AO Index'
-                ))
-                fig_ao.add_hline(y=0, line_color="white", line_width=1)
-                fig_ao.update_layout(title="AO Endeksi (Kırmızı: Negatif/Soğuk Salınım İhtimali)", template="plotly_dark")
-                st.plotly_chart(fig_ao, use_container_width=True)
+                    fig.update_layout(
+                        title=dict(text=f"{secim} - {konum_adi}", font=dict(size=14)),
+                        template="plotly_dark", height=300,
+                        margin=dict(l=10, r=10, t=40, b=10),
+                        hovermode="x unified", showlegend=False
+                    )
+                    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'staticPlot': False})
             else:
-                st.warning("NOAA sunucularından AO verisi çekilemedi. Geçici bir sorun olabilir.")
-
-        # NAO Grafiği
-        with col_nao:
-            df_nao = fetch_noaa_index("nao")
-            if df_nao is not None:
-                fig_nao = go.Figure()
-                fig_nao.add_trace(go.Bar(
-                    x=df_nao['Date'], y=df_nao['Index'],
-                    marker_color=df_nao['Index'].apply(lambda x: 'red' if x < 0 else 'blue'),
-                    name='NAO Index'
-                ))
-                fig_nao.add_hline(y=0, line_color="white", line_width=1)
-                fig_nao.update_layout(title="NAO Endeksi", template="plotly_dark")
-                st.plotly_chart(fig_nao, use_container_width=True)
-            else:
-                st.warning("NOAA sunucularından NAO verisi çekilemedi.")
-                
-        # PNA Grafiği
-        with col_pna:
-             df_pna = fetch_noaa_index("pna")
-             if df_pna is not None:
-                fig_pna = go.Figure()
-                fig_pna.add_trace(go.Bar(
-                    x=df_pna['Date'], y=df_pna['Index'],
-                    marker_color=df_pna['Index'].apply(lambda x: 'red' if x < 0 else 'blue'),
-                     name='PNA Index'
-                ))
-                fig_pna.add_hline(y=0, line_color="white", line_width=1)
-                fig_pna.update_layout(title="PNA Endeksi", template="plotly_dark")
-                st.plotly_chart(fig_pna, use_container_width=True)
-             else:
-                st.warning("NOAA sunucularından PNA verisi çekilemedi.")
-
-else:
-    st.info("👈 Menüden verileri seç ve analizi başlat kanka.")
+                st.error("Sunucu hatası, tekrar dene.")
