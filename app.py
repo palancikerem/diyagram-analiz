@@ -12,11 +12,12 @@ import numpy as np
 
 import os
 
-# 'haritalar' yerine senin kodunda klasörün adı neyse onu yaz
-klasör_adi = 'haritalar' 
+# Klasör adın kodda tam olarak neyse onu yaz (gfs_analiz mi?)
+klasor_adi = 'gfs_analiz'
 
-if not os.path.exists(klasör_adi):
-    os.makedirs(klasör_adi)
+if not os.path.exists(klasor_adi):
+    os.makedirs(klasor_adi)
+    print(f"{klasor_adi} klasörü oluşturuldu.")
 # --- SAYFA AYARLARI ---
 st.set_page_config(
     page_title="GFS Analiz Pro", 
@@ -310,7 +311,12 @@ with tab2:
 
     # Resim Yolu
     resim_yolu = f"{HARITA_KLASOR}/{dosya_on_ek}_{saat_str}.png"
-    
+    import os
+st.write("Mevcut dosyalar:", os.listdir('.')) # Ana dizindeki dosyaları gösterir
+if os.path.exists('gfs_analiz'):
+    st.write("GFS Klasörü içindekiler:", os.listdir('gfs_analiz'))
+else:
+    st.error("GFS Analiz klasörü hiç oluşmamış!")
     if os.path.exists(resim_yolu):
         st.image(resim_yolu, caption=f"GFS {harita_tipi} - Vade: +{secilen_saat} Saat", use_container_width=True)
     else:
