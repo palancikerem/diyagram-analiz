@@ -61,18 +61,30 @@ def get_gfs_run_info():
     elif 15 <= hour < 21: return "12Z"
     else: return "18Z"
 
-# Arayüz
+
 with st.expander(" Konum / Veri Seçimi", expanded=True):
-    tab_sehir, tab_manuel = st.tabs(["İl Listesi", "Manuel"])
+   
+    c_il, c_senaryo = st.columns([2, 1])
     
-    with tab_sehir:
-        secilen_il = st.selectbox("İl:", list(TR_ILLER.keys()), index=38) 
-        lat_il, lon_il = TR_ILLER[secilen_il]
-    
-    with tab_manuel:
-        c1, c2 = st.columns(2)
-        lat_man = c1.number_input("Enlem", value=41.00)
-        lon_man = c2.number_input("Boylam", value=28.97)
+    with c_il:
+        tab_sehir, tab_manuel = st.tabs(["İl Listesi", "Manuel"])
+        with tab_sehir:
+            secilen_il = st.selectbox("İl:", list(TR_ILLER.keys()), index=38) 
+            lat_il, lon_il = TR_ILLER[secilen_il]
+        with tab_manuel:
+            mc1, mc2 = st.columns(2)
+            lat_man = mc1.number_input("Enlem", value=41.00)
+            lon_man = mc2.number_input("Boylam", value=28.97)
+
+    with c_senaryo:
+        st.write("") 
+        st.write("") 
+       
+        vurgulu_senaryolar = st.multiselect(
+            "Senaryo Vurgula (0=Ana Çıktı)",
+            options=range(0, 31),
+            default=[]
+        )
 
     if lat_man != 41.00 or lon_man != 28.97:
         final_lat, final_lon = lat_man, lon_man
@@ -81,7 +93,7 @@ with st.expander(" Konum / Veri Seçimi", expanded=True):
         final_lat, final_lon = lat_il, lon_il
         konum_adi = secilen_il
 
-    
+ 
     secilen_veriler = st.multiselect(
         "Veriler:",
         [
@@ -89,16 +101,16 @@ with st.expander(" Konum / Veri Seçimi", expanded=True):
             "Sıcaklık (500hPa)",
             "Sıcaklık (2m)", 
             "Dewpoint (2m)",
-            "Bağıl Nem (2m)",   
+            "Bağıl Nem (2m)",
             "Kar Yağışı (cm)", 
             "Yağış (mm)",
-            "Bulutluluk (%)",  
+            "Bulutluluk (%)",
             "Rüzgar (10m)",
-            "Rüzgar Hamlesi",   
+            "Rüzgar Hamlesi",
             "CAPE", 
             "Basınç",
-            "GPH (500hPa)",      
-            "Donma Seviyesi (m)" 
+            "GPH (500hPa)",
+            "Donma Seviyesi (m)"
         ],
         default=["Sıcaklık (850hPa)", "Kar Yağışı (cm)"]
     )
@@ -108,7 +120,7 @@ with st.expander(" Konum / Veri Seçimi", expanded=True):
     
     btn_calistir = st.button("Çalıştır", type="primary", use_container_width=True)
 
-# Veri Çekme (Önbellekli)
+
 @st.cache_data(ttl=3600)
 def get_local_data(lat, lon, variables):
     var_map = {
@@ -159,22 +171,50 @@ if btn_calistir:
                 for secim in secilen_veriler:
                     api_kod = mapping[secim]
                     fig = go.Figure()
-                    cols = [k for k in hourly.keys() if k.startswith(api_kod) and 'member' in k]
                     
                
+                    cols = [k for k in hourly.keys() if k.startswith(api_kod) and 'member' in k]
+                    
+                
                     for member in cols:
+                       
+                        try:
+                            mem_num = int(member.split('member')[1])
+                        except:
+                            mem_num = -1
+                        
+                      
+                        line_color = 'lightgrey'
+                        line_width = 0.7
+                        line_opacity = 0.5
+                        show_leg = False
+                        
+                   
+                        if mem_num in vurgulu_senaryolar:
+                            line_color = '#FF1493' 
+                            line_width = 2.0
+                            line_opacity = 1.0
+                            show_leg = True 
+                        
+                        senaryo_adi = f"Senaryo {mem_num}"
+                        if mem_num == 0: senaryo_adi += " (Ana)"
+
                         fig.add_trace(go.Scatter(
                             x=time, y=hourly[member],
-                            mode='lines', line=dict(color='lightgrey', width=0.5),
-                            opacity=0.5, showlegend=False, hoverinfo='skip'
+                            mode='lines', 
+                            line=dict(color=line_color, width=line_width),
+                            opacity=line_opacity,
+                            name=senaryo_adi,
+                            showlegend=show_leg,
+                            hovertemplate=f'<b>{senaryo_adi}</b>: %{{y:.1f}}<extra></extra>' 
                         ))
                     
-                   
+               
                     if cols:
                         df_m = pd.DataFrame(hourly)[cols]
                         mean_val = df_m.mean(axis=1)
                         
-                    
+                       
                         c = 'cyan'
                         if "Sıcaklık (2m)" in secim: c = 'orange'
                         elif "850hPa" in secim: c = 'red'
@@ -191,11 +231,11 @@ if btn_calistir:
                         
                         fig.add_trace(go.Scatter(
                             x=time, y=mean_val,
-                            mode='lines', line=dict(color=c, width=2.5),
-                            name='Ortalama'
+                            mode='lines', line=dict(color=c, width=3),
+                            name='ORTALAMA',
+                            hovertemplate='<b>ORTALAMA</b>: %{y:.1f}<extra></extra>'
                         ))
                     
-                 
                     if "850hPa" in secim:
                          fig.add_hline(y=-8, line_dash="dash", line_color="blue", opacity=0.5, annotation_text="-8 (Kar Sınırı)")
                     
@@ -204,8 +244,9 @@ if btn_calistir:
 
                     fig.update_layout(
                         title=dict(text=f"{secim} - {konum_adi}", font=dict(size=14)),
-                        template="plotly_dark", height=300,
+                        template="plotly_dark", height=350,
                         margin=dict(l=10, r=10, t=30, b=10),
-                        hovermode="x unified", showlegend=False
+                        hovermode="x unified", 
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
                     )
                     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'staticPlot': False})
