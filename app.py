@@ -71,7 +71,7 @@ with st.expander("📍 Ayarlar ve Konum", expanded=True):
         lat_il, lon_il = TR_ILLER[secilen_il]
     
     with col_b:
-        # MODEL SEÇİMİ (YENİ ÖZELLİK)
+        # MODEL SEÇİMİ
         secilen_model_adi = st.selectbox(
             "Hava Durumu Modeli:",
             ["GFS (Amerikan)", "ICON (Alman)", "GEM (Kanada)"]
@@ -128,7 +128,7 @@ def get_data(lat, lon, variables, model):
     params = {
         "latitude": lat, "longitude": lon,
         "hourly": api_vars,
-        "models": model, # Dinamik Model Seçimi
+        "models": model, 
         "timezone": "auto"
     }
     
@@ -233,29 +233,27 @@ if btn_calistir:
                         )
                         st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-                        # --- OLASILIK / RİSK TABLOSU (YENİ) ---
-                        # Sadece Yağış ve Kar için hesaplayalım
+                        # --- OLASILIK / RİSK TABLOSU (DÜZELTİLDİ) ---
                         if "Kar" in secim or "Yağış" in secim or "850hPa" in secim:
                             with st.expander(f"📊 {secim} - Olasılık ve Risk Analizi", expanded=False):
-                                # Günlük Bazda Özet
                                 df_daily = df_m.copy()
-                                df_daily['Day'] = time.dt.date
+                                # DÜZELTME BURADA: .dt silindi
+                                df_daily['Day'] = time.date 
                                 
                                 # Günlük Maksimumları al
                                 daily_max = df_daily.groupby('Day').max()
                                 
                                 # Olasılık Hesabı
                                 if "Kar" in secim:
-                                    threshold = 1 # 1 cm üstü kar
+                                    threshold = 1 
                                     label = "Kar Yağış İhtimali (>1cm)"
                                 elif "Yağış" in secim:
-                                    threshold = 1 # 1 mm üstü yağış
+                                    threshold = 1 
                                     label = "Yağış İhtimali (>1mm)"
                                 elif "850hPa" in secim:
-                                    threshold = -8 # -8 derecenin altı (soğuk)
+                                    threshold = -8
                                     label = "Kar Yapıcı Soğuk İhtimali (<-8°C)"
-                                    # Soğuk için mantık ters (daha düşük değerler aranır)
-                                    daily_min = df_daily.groupby('Day').min() # Günün en düşüğüne bak
+                                    daily_min = df_daily.groupby('Day').min() 
                                     probs = (daily_min < threshold).sum(axis=1) / 31 * 100
                                 else:
                                     threshold = 0
@@ -269,18 +267,12 @@ if btn_calistir:
                                 if len(probs) > 0:
                                     st.write(f"**{label}** (31 Senaryo Analizi)")
                                     
-                                    # Metrik Kartları Yan Yana
-                                    cols_metric = st.columns(6) # İlk 6 günü gösterelim
+                                    cols_metric = st.columns(6) 
                                     for i, (day, prob) in enumerate(probs.items()):
                                         if i < 6:
-                                            renk = "off"
-                                            if prob > 80: renk = "normal" # Kırmızımsı
-                                            elif prob > 40: renk = "normal"
-                                            
                                             with cols_metric[i]:
                                                 st.metric(
                                                     label=day.strftime("%d %b"), 
                                                     value=f"%{int(prob)}",
                                                     delta="Yüksek Risk" if prob > 70 else None
                                                 )
-                                                
