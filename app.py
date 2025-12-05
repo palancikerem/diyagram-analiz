@@ -179,13 +179,10 @@ if btn_calistir:
                         df_m = pd.DataFrame(hourly)[cols]
                         
                         # --- HESAPLAMALAR ---
-                        # Her saat için Max, Min ve Ortalama hesapla
                         mean_val = df_m.mean(axis=1)
                         max_val = df_m.max(axis=1)
                         min_val = df_m.min(axis=1)
                         
-                        # Max ve Min'in hangi member olduğunu bul
-                        # Sütun isimlerinden sadece numarayı alacağız (örn: ...member13 -> 13)
                         max_member_col = df_m.idxmax(axis=1)
                         min_member_col = df_m.idxmin(axis=1)
                         
@@ -210,7 +207,6 @@ if btn_calistir:
                             line_width = 0.5
                             line_opacity = 0.5
                             show_leg = False
-                            # DİKKAT: Gri çizgilerin hover'ını kapattım (skip)
                             hov_info = 'skip' 
                             
                             # VURGULU ise
@@ -219,7 +215,7 @@ if btn_calistir:
                                 line_width = 2.0
                                 line_opacity = 1.0
                                 show_leg = True 
-                                hov_info = 'all' # Vurgulu olanın bilgisi görünsün
+                                hov_info = 'all' 
                             
                             senaryo_adi = f"Senaryo {mem_num}"
 
@@ -235,13 +231,16 @@ if btn_calistir:
                             ))
                         
                         # --- AKILLI ÖZET KUTUSU (Görünmez Çizgi) ---
-                        # Bu çizgi çizilmez ama hover bilgisini taşır. Ortalamayı takip eder.
                         
                         hover_text = []
                         for i in range(len(time)):
-                            t_str = f"<b>EN YÜKSEK:</b> {max_val[i]:.1f} ({max_mem_names[i]})<br>"
-                            t_str += f"<b>ORTALAMA:</b> {mean_val[i]:.1f}<br>"
-                            t_str += f"<b>EN DÜŞÜK:</b> {min_val[i]:.1f} ({min_mem_names[i]})"
+                            # Tarih Formatı: 06.12 15:00 gibi
+                            t_str_fmt = time[i].strftime("%d.%m %H:%M")
+                            
+                            t_str = f"📅 <b>{t_str_fmt}</b><br>──────────────<br>"
+                            t_str += f"🔥 <b>EN YÜKSEK:</b> {max_val[i]:.1f} ({max_mem_names[i]})<br>"
+                            t_str += f"⚪ <b>ORTALAMA:</b> {mean_val[i]:.1f}<br>"
+                            t_str += f"🧊 <b>EN DÜŞÜK:</b> {min_val[i]:.1f} ({min_mem_names[i]})"
                             hover_text.append(t_str)
                             
                         fig.add_trace(go.Scatter(
@@ -255,7 +254,6 @@ if btn_calistir:
                         ))
 
                         # --- ORTALAMA ÇİZGİSİ (Görsel) ---
-                        # Renk Ayarı
                         c = 'cyan'
                         if "Sıcaklık (2m)" in secim: c = 'orange'
                         elif "850hPa" in secim: c = 'red'
@@ -274,7 +272,7 @@ if btn_calistir:
                             x=time, y=mean_val,
                             mode='lines', line=dict(color=c, width=3),
                             name='ORTALAMA',
-                            hoverinfo='skip' # Kendi hoverını kapattık, Özet kutusu yetiyor
+                            hoverinfo='skip'
                         ))
                     
                     # Referans Çizgiler
