@@ -4,11 +4,13 @@ import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime, timezone
 
+
 st.set_page_config(
     page_title="GFS Analiz - KeremPalancı", 
     layout="wide", 
     initial_sidebar_state="collapsed"
 )
+
 
 st.markdown("""
     <style>
@@ -19,6 +21,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("GFS Diyagram - KeremPalancı")
+
 
 TR_ILLER = {
     "Adana": [37.00, 35.32], "Adıyaman": [37.76, 38.28], "Afyonkarahisar": [38.75, 30.54],
@@ -58,6 +61,7 @@ def get_gfs_run_info():
     elif 15 <= hour < 21: return "12Z"
     else: return "18Z"
 
+# Arayüz
 with st.expander(" Konum / Veri Seçimi", expanded=True):
     tab_sehir, tab_manuel = st.tabs(["İl Listesi", "Manuel"])
     
@@ -84,12 +88,17 @@ with st.expander(" Konum / Veri Seçimi", expanded=True):
             "Sıcaklık (850hPa)", 
             "Sıcaklık (500hPa)",
             "Sıcaklık (2m)", 
-            "Dewpoint (2m)",    
+            "Dewpoint (2m)",
+            "Bağıl Nem (2m)",   
             "Kar Yağışı (cm)", 
             "Yağış (mm)",
-            "Rüzgar (10m)", 
+            "Bulutluluk (%)",  
+            "Rüzgar (10m)",
+            "Rüzgar Hamlesi",   
             "CAPE", 
-            "Basınç"
+            "Basınç",
+            "GPH (500hPa)",      
+            "Donma Seviyesi (m)" 
         ],
         default=["Sıcaklık (850hPa)", "Kar Yağışı (cm)"]
     )
@@ -99,20 +108,26 @@ with st.expander(" Konum / Veri Seçimi", expanded=True):
     
     btn_calistir = st.button("Çalıştır", type="primary", use_container_width=True)
 
-
+# Veri Çekme (Önbellekli)
 @st.cache_data(ttl=3600)
 def get_local_data(lat, lon, variables):
     var_map = {
         "Sıcaklık (850hPa)": "temperature_850hPa",
         "Sıcaklık (500hPa)": "temperature_500hPa", 
         "Sıcaklık (2m)": "temperature_2m",
-        "Dewpoint (2m)": "dewpoint_2m",            
+        "Dewpoint (2m)": "dewpoint_2m",  
+        "Bağıl Nem (2m)": "relativehumidity_2m",
         "Kar Yağışı (cm)": "snowfall",
         "Yağış (mm)": "precipitation",
+        "Bulutluluk (%)": "cloudcover",
         "Rüzgar (10m)": "windspeed_10m",
+        "Rüzgar Hamlesi": "windgusts_10m",
         "CAPE": "cape",
-        "Basınç": "pressure_msl"
+        "Basınç": "pressure_msl",
+        "GPH (500hPa)": "geopotential_height_500hPa",
+        "Donma Seviyesi (m)": "freezinglevel_height"
     }
+    
     api_vars = [var_map[v] for v in variables]
     
     url = "https://ensemble-api.open-meteo.com/v1/ensemble"
@@ -128,6 +143,7 @@ def get_local_data(lat, lon, variables):
         return r.json(), var_map
     except:
         return None, None
+
 
 if btn_calistir:
     if not secilen_veriler:
@@ -145,6 +161,7 @@ if btn_calistir:
                     fig = go.Figure()
                     cols = [k for k in hourly.keys() if k.startswith(api_kod) and 'member' in k]
                     
+               
                     for member in cols:
                         fig.add_trace(go.Scatter(
                             x=time, y=hourly[member],
@@ -152,18 +169,25 @@ if btn_calistir:
                             opacity=0.5, showlegend=False, hoverinfo='skip'
                         ))
                     
+                   
                     if cols:
                         df_m = pd.DataFrame(hourly)[cols]
                         mean_val = df_m.mean(axis=1)
                         
-                        
+                    
                         c = 'cyan'
                         if "Sıcaklık (2m)" in secim: c = 'orange'
                         elif "850hPa" in secim: c = 'red'
                         elif "500hPa" in secim: c = 'purple' 
                         elif "Dewpoint" in secim: c = 'lime'
+                        elif "Nem" in secim: c = 'green'
                         elif "Kar" in secim: c = 'white'
                         elif "CAPE" in secim: c = 'yellow'
+                        elif "Basınç" in secim: c = 'magenta'
+                        elif "Bulut" in secim: c = 'lightgray'
+                        elif "Hamlesi" in secim: c = 'pink'
+                        elif "Donma" in secim: c = 'teal'
+                        elif "GPH" in secim: c = 'gold'
                         
                         fig.add_trace(go.Scatter(
                             x=time, y=mean_val,
@@ -171,9 +195,12 @@ if btn_calistir:
                             name='Ortalama'
                         ))
                     
-                  
+                 
                     if "850hPa" in secim:
-                         fig.add_hline(y=-8, line_dash="dash", line_color="blue", opacity=0.5)
+                         fig.add_hline(y=-8, line_dash="dash", line_color="blue", opacity=0.5, annotation_text="-8 (Kar Sınırı)")
+                    
+                    if "Donma" in secim:
+                         fig.add_hline(y=0, line_dash="dash", line_color="white", opacity=0.5)
 
                     fig.update_layout(
                         title=dict(text=f"{secim} - {konum_adi}", font=dict(size=14)),
