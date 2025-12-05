@@ -4,14 +4,14 @@ import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime, timezone
 
-# Sayfa Ayarları
+
 st.set_page_config(
     page_title="GFS Analiz - KeremPalancı", 
     layout="wide", 
     initial_sidebar_state="collapsed"
 )
 
-# CSS Düzenlemeleri
+
 st.markdown("""
     <style>
         .block-container { padding-top: 1rem; padding-bottom: 0rem; padding-left: 1rem; padding-right: 1rem; }
@@ -22,7 +22,7 @@ st.markdown("""
 
 st.title("GFS Diyagram - KeremPalancı")
 
-# Şehir Koordinatları
+
 TR_ILLER = {
     "Adana": [37.00, 35.32], "Adıyaman": [37.76, 38.28], "Afyonkarahisar": [38.75, 30.54],
     "Ağrı": [39.72, 43.05], "Aksaray": [38.37, 34.03], "Amasya": [40.65, 35.83],
@@ -63,7 +63,7 @@ def get_gfs_run_info():
 
 # Arayüz
 with st.expander(" Konum / Veri Seçimi", expanded=True):
-    # Üst Kısım: İl ve Senaryo Seçimi
+
     c_il, c_senaryo = st.columns([2, 1])
     
     with c_il:
@@ -77,15 +77,15 @@ with st.expander(" Konum / Veri Seçimi", expanded=True):
             lon_man = mc2.number_input("Boylam", value=28.97)
 
     with c_senaryo:
-        st.write("") # Boşluk
-        st.write("") # Boşluk
+        st.write("")
+        st.write("") 
         vurgulu_senaryolar = st.multiselect(
             "Senaryo Vurgula (0=Ana Çıktı)",
             options=range(0, 31),
             default=[]
         )
 
-    # Koordinat Belirleme
+  
     if lat_man != 41.00 or lon_man != 28.97:
         final_lat, final_lon = lat_man, lon_man
         konum_adi = f"K: {final_lat},{final_lon}"
@@ -93,7 +93,7 @@ with st.expander(" Konum / Veri Seçimi", expanded=True):
         final_lat, final_lon = lat_il, lon_il
         konum_adi = secilen_il
 
-    # Veri Listesi
+   
     secilen_veriler = st.multiselect(
         "Veriler:",
         [
@@ -120,7 +120,7 @@ with st.expander(" Konum / Veri Seçimi", expanded=True):
     
     btn_calistir = st.button("Çalıştır", type="primary", use_container_width=True)
 
-# Veri Çekme (Önbellekli)
+
 @st.cache_data(ttl=3600)
 def get_local_data(lat, lon, variables):
     var_map = {
@@ -156,7 +156,7 @@ def get_local_data(lat, lon, variables):
     except:
         return None, None
 
-# Grafik Çizdirme
+
 if btn_calistir:
     if not secilen_veriler:
         st.error("Veri seç.")
@@ -172,13 +172,13 @@ if btn_calistir:
                     api_kod = mapping[secim]
                     fig = go.Figure()
                     
-                    # İlgili veri sütunlarını bul
+                   
                     cols = [k for k in hourly.keys() if k.startswith(api_kod) and 'member' in k]
                     
                     if cols:
                         df_m = pd.DataFrame(hourly)[cols]
                         
-                        # --- HESAPLAMALAR ---
+                      
                         mean_val = df_m.mean(axis=1)
                         max_val = df_m.max(axis=1)
                         min_val = df_m.min(axis=1)
@@ -195,7 +195,7 @@ if btn_calistir:
                         max_mem_names = max_member_col.apply(clean_mem_name)
                         min_mem_names = min_member_col.apply(clean_mem_name)
 
-                        # --- SENARYOLAR DÖNGÜSÜ ---
+                        
                         for member in cols:
                             try:
                                 mem_num = int(member.split('member')[1])
@@ -209,9 +209,9 @@ if btn_calistir:
                             show_leg = False
                             hov_info = 'skip' 
                             
-                            # VURGULU ise
+                            
                             if mem_num in vurgulu_senaryolar:
-                                line_color = '#FF1493' # Canlı Pembe
+                                line_color = '#FF1493' 
                                 line_width = 2.0
                                 line_opacity = 1.0
                                 show_leg = True 
@@ -230,30 +230,30 @@ if btn_calistir:
                                 hovertemplate=f'<b>{senaryo_adi}</b>: %{{y:.1f}}<extra></extra>' 
                             ))
                         
-                        # --- AKILLI ÖZET KUTUSU (Görünmez Çizgi) ---
+                        
                         
                         hover_text = []
                         for i in range(len(time)):
-                            # Tarih Formatı: 06.12 15:00 gibi
+                           
                             t_str_fmt = time[i].strftime("%d.%m %H:%M")
                             
                             t_str = f"📅 <b>{t_str_fmt}</b><br>──────────────<br>"
-                            t_str += f"🔥 <b>EN YÜKSEK:</b> {max_val[i]:.1f} ({max_mem_names[i]})<br>"
-                            t_str += f"⚪ <b>ORTALAMA:</b> {mean_val[i]:.1f}<br>"
-                            t_str += f"🧊 <b>EN DÜŞÜK:</b> {min_val[i]:.1f} ({min_mem_names[i]})"
+                            t_str += f" <b>EN YÜKSEK:</b> {max_val[i]:.1f} ({max_mem_names[i]})<br>"
+                            t_str += f" <b>ORTALAMA:</b> {mean_val[i]:.1f}<br>"
+                            t_str += f" <b>EN DÜŞÜK:</b> {min_val[i]:.1f} ({min_mem_names[i]})"
                             hover_text.append(t_str)
                             
                         fig.add_trace(go.Scatter(
-                            x=time, y=mean_val, # Ortalamayı takip etsin
+                            x=time, y=mean_val, 
                             mode='lines',
-                            line=dict(color='rgba(0,0,0,0)', width=0), # Görünmez çizgi
+                            line=dict(color='rgba(0,0,0,0)', width=0),
                             name='ÖZET',
                             showlegend=False,
                             hovertemplate="%{text}<extra></extra>",
                             text=hover_text
                         ))
 
-                        # --- ORTALAMA ÇİZGİSİ (Görsel) ---
+                        
                         c = 'cyan'
                         if "Sıcaklık (2m)" in secim: c = 'orange'
                         elif "850hPa" in secim: c = 'red'
@@ -275,7 +275,7 @@ if btn_calistir:
                             hoverinfo='skip'
                         ))
                     
-                    # Referans Çizgiler
+                    
                     if "850hPa" in secim:
                          fig.add_hline(y=-8, line_dash="dash", line_color="blue", opacity=0.5, annotation_text="-8 (Kar Sınırı)")
                     
