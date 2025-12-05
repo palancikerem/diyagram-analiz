@@ -2,26 +2,33 @@ import streamlit as st
 import requests
 import pandas as pd
 import plotly.graph_objects as go
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+import os
+import xarray as xr
+import matplotlib.pyplot as plt
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
+import numpy as np
 
+# --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="GFS Analiz", 
+    page_title="GFS Analiz Pro", 
     layout="wide", 
     initial_sidebar_state="collapsed"
 )
 
-
+# --- CSS VE STİL ---
 st.markdown("""
     <style>
-        .block-container { padding-top: 1rem; padding-bottom: 0rem; padding-left: 1rem; padding-right: 1rem; }
+        .block-container { padding-top: 1rem; padding-bottom: 0rem; }
         h1 { font-size: 1.5rem !important; }
         .stSelectbox { margin-bottom: 0px; }
     </style>
 """, unsafe_allow_html=True)
 
-st.title("GFS Diyagram")
+st.title("GFS Analiz Merkezi")
 
-
+# --- SABİTLER ---
 TR_ILLER = {
     "Adana": [37.00, 35.32], "Adıyaman": [37.76, 38.28], "Afyonkarahisar": [38.75, 30.54],
     "Ağrı": [39.72, 43.05], "Aksaray": [38.37, 34.03], "Amasya": [40.65, 35.83],
@@ -52,6 +59,11 @@ TR_ILLER = {
     "Yalova": [40.65, 29.27], "Yozgat": [39.82, 34.81], "Zonguldak": [41.45, 31.79]
 }
 
+HARITA_KLASOR = "haritalar"
+if not os.path.exists(HARITA_KLASOR):
+    os.makedirs(HARITA_KLASOR)
+
+# --- YARDIMCI FONKSİYONLAR ---
 def get_gfs_run_info():
     now_utc = datetime.now(timezone.utc)
     hour = now_utc.hour
@@ -60,47 +72,97 @@ def get_gfs_run_info():
     elif 15 <= hour < 21: return "12Z"
     else: return "18Z"
 
-with st.expander(" Konum / Veri Seçimi", expanded=True):
-    tab_sehir, tab_manuel = st.tabs(["İl Listesi", "Manuel"])
-    
-    with tab_sehir:
-        secilen_il = st.selectbox("İl:", list(TR_ILLER.keys()), index=38) 
-        lat_il, lon_il = TR_ILLER[secilen_il]
-    
-    with tab_manuel:
-        c1, c2 = st.columns(2)
-        lat_man = c1.number_input("Enlem", value=41.00)
-        lon_man = c2.number_input("Boylam", value=28.97)
+def get_nomads_info():
+    """Nomads sunucusu için tarih ve run bilgisini döndürür"""
+    simdi = datetime.utcnow()
+    if simdi.hour < 4: run = "18"; tarih = simdi - timedelta(days=1)
+    elif simdi.hour < 10: run = "00"; tarih = simdi
+    elif simdi.hour < 16: run = "06"; tarih = simdi
+    else: run = "12"; tarih = simdi
+    return tarih.strftime("%Y%m%d"), run
 
-    if lat_man != 41.00 or lon_man != 28.97:
-        final_lat, final_lon = lat_man, lon_man
-        konum_adi = f"K: {final_lat},{final_lon}"
-    else:
-        final_lat, final_lon = lat_il, lon_il
-        konum_adi = secilen_il
+# --- HARİTA OLUŞTURMA FONKSİYONU ---
+def haritalari_olustur():
+    tarih, run = get_nomads_info()
+    progress_bar = st.progress(0, text="Veri indirme başlıyor...")
+    status_text = st.empty()
+    
+    # Şimdilik örnek olarak 72 saate kadar 6 saat arayla indirelim (Hız testi için)
+    # İstersen 240 yapabilirsin: range(0, 241, 6)
+    saat_araligi = range(0, 241, 6) 
+    total_steps = len(saat_araligi)
+    
+    for i, saat in enumerate(saat_araligi):
+        saat_str = f"{saat:03d}"
+        status_text.text(f"İşleniyor: {saat}. Saat (GFS {run})")
+        
+        # URL
+        url = (
+            f"https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl?"
+            f"file=gfs.t{run}z.pgrb2.0p25.f{saat_str}&"
+            f"lev_850_mb=on&var_TMP=on&"
+            f"lev_surface=on&var_APCP=on&"
+            f"subregion=&leftlon=20&rightlon=50&toplat=45&bottomlat=30&"
+            f"dir=%2Fgfs.{tarih}%2F{run}%2Fatmos"
+        )
+        
+        dosya_adi = f"temp_gfs_{saat_str}.grib2"
+        
+        try:
+            r = requests.get(url, timeout=30)
+            if r.status_code == 200:
+                with open(dosya_adi, 'wb') as f:
+                    f.write(r.content)
+                
+                # --- ÇİZİM: SICAKLIK ---
+                try:
+                    ds = xr.open_dataset(dosya_adi, engine='cfgrib', backend_kwargs={'filter_by_keys': {'shortName': 't'}})
+                    t = ds['t'] - 273.15
+                    
+                    fig = plt.figure(figsize=(10, 6))
+                    ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())
+                    ax.add_feature(cfeature.COASTLINE); ax.add_feature(cfeature.BORDERS, linestyle=':')
+                    ax.set_extent([25, 46, 35, 43], crs=ccrs.PlateCarree())
+                    
+                    t.plot.contourf(ax=ax, transform=ccrs.PlateCarree(), levels=np.arange(-15, 30, 2), 
+                                    cmap='jet', cbar_kwargs={'label': 'Sıcaklık (°C)'})
+                    plt.title(f"850hPa Sıcaklık | +{saat} Saat")
+                    plt.savefig(f"{HARITA_KLASOR}/sicaklik_{saat_str}.png", bbox_inches='tight', dpi=90)
+                    plt.close()
+                    ds.close()
+                except Exception as e:
+                    print(f"Sıcaklık hatası: {e}")
 
-    
-    secilen_veriler = st.multiselect(
-        "Veriler:",
-        [
-            "Sıcaklık (850hPa)", 
-            "Sıcaklık (500hPa)",
-            "Sıcaklık (2m)", 
-            "Dewpoint (2m)",    
-            "Kar Yağışı (cm)", 
-            "Yağış (mm)",
-            "Rüzgar (10m)", 
-            "CAPE", 
-            "Basınç"
-        ],
-        default=["Sıcaklık (850hPa)", "Kar Yağışı (cm)"]
-    )
-    
-    run_info = get_gfs_run_info()
-    st.caption(f"Model Çıktısı: **{run_info}** (Tahmini)")
-    
-    btn_calistir = st.button("Çalıştır", type="primary", use_container_width=True)
+                # --- ÇİZİM: YAĞIŞ ---
+                try:
+                    ds_rain = xr.open_dataset(dosya_adi, engine='cfgrib', backend_kwargs={'filter_by_keys': {'shortName': 'tp'}})
+                    p = ds_rain['tp']
+                    fig = plt.figure(figsize=(10, 6))
+                    ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())
+                    ax.add_feature(cfeature.COASTLINE); ax.add_feature(cfeature.BORDERS, linestyle=':')
+                    ax.set_extent([25, 46, 35, 43], crs=ccrs.PlateCarree())
+                    
+                    levels = [0.1, 1, 2, 5, 10, 20, 50, 100]
+                    p.plot.contourf(ax=ax, transform=ccrs.PlateCarree(), levels=levels, 
+                                    cmap='BuPu', cbar_kwargs={'label': 'Yağış (mm)'})
+                    plt.title(f"Toplam Yağış | +{saat} Saat")
+                    plt.savefig(f"{HARITA_KLASOR}/yagis_{saat_str}.png", bbox_inches='tight', dpi=90)
+                    plt.close()
+                    ds_rain.close()
+                except:
+                    pass # Yağış yoksa geç
 
+                os.remove(dosya_adi)
+            
+            progress_bar.progress((i + 1) / total_steps)
+            
+        except Exception as e:
+            st.error(f"Hata oluştu: {e}")
+            
+    status_text.success("Haritalar güncellendi!")
+    progress_bar.empty()
+
+# --- DİYAGRAM VERİSİ ÇEKME ---
 def get_local_data(lat, lon, variables):
     var_map = {
         "Sıcaklık (850hPa)": "temperature_850hPa",
@@ -129,56 +191,120 @@ def get_local_data(lat, lon, variables):
     except:
         return None, None
 
-if btn_calistir:
-    if not secilen_veriler:
-        st.error("Veri seç.")
-    else:
-        with st.spinner('Veri çekiliyor...'):
-            data, mapping = get_local_data(final_lat, final_lon, secilen_veriler)
-            
-            if data:
-                hourly = data['hourly']
-                time = pd.to_datetime(hourly['time'])
-                
-                for secim in secilen_veriler:
-                    api_kod = mapping[secim]
-                    fig = go.Figure()
-                    cols = [k for k in hourly.keys() if k.startswith(api_kod) and 'member' in k]
-                    
-                    for member in cols:
-                        fig.add_trace(go.Scatter(
-                            x=time, y=hourly[member],
-                            mode='lines', line=dict(color='lightgrey', width=0.5),
-                            opacity=0.5, showlegend=False, hoverinfo='skip'
-                        ))
-                    
-                    if cols:
-                        df_m = pd.DataFrame(hourly)[cols]
-                        mean_val = df_m.mean(axis=1)
-                        
-                        
-                        c = 'cyan'
-                        if "Sıcaklık (2m)" in secim: c = 'orange'
-                        elif "850hPa" in secim: c = 'red'
-                        elif "500hPa" in secim: c = 'purple' 
-                        elif "Dewpoint" in secim: c = 'lime'
-                        elif "Kar" in secim: c = 'white'
-                        elif "CAPE" in secim: c = 'yellow'
-                        
-                        fig.add_trace(go.Scatter(
-                            x=time, y=mean_val,
-                            mode='lines', line=dict(color=c, width=2.5),
-                            name='Ortalama'
-                        ))
-                    
-                 
-                    if "850hPa" in secim:
-                         fig.add_hline(y=-8, line_dash="dash", line_color="blue", opacity=0.5)
+# ================= ARAYÜZ YAPISI =================
 
-                    fig.update_layout(
-                        title=dict(text=f"{secim} - {konum_adi}", font=dict(size=14)),
-                        template="plotly_dark", height=300,
-                        margin=dict(l=10, r=10, t=30, b=10),
-                        hovermode="x unified", showlegend=False
-                    )
-                    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'staticPlot': False})
+tab1, tab2 = st.tabs(["📊 Diyagramlar", "🗺️ Haritalar"])
+
+# --- TAB 1: DİYAGRAMLAR (Eski Kodun) ---
+with tab1:
+    with st.expander("Konum / Veri Seçimi", expanded=True):
+        col_list, col_man = st.columns(2)
+        with col_list:
+            secilen_il = st.selectbox("İl Seç:", list(TR_ILLER.keys()), index=38) 
+            lat_il, lon_il = TR_ILLER[secilen_il]
+        
+        with col_man:
+            st.write("Veya Manuel Gir:")
+            c1, c2 = st.columns(2)
+            lat_man = c1.number_input("Enlem", value=41.00)
+            lon_man = c2.number_input("Boylam", value=28.97)
+
+        if lat_man != 41.00 or lon_man != 28.97:
+            final_lat, final_lon = lat_man, lon_man
+            konum_adi = f"K: {final_lat},{final_lon}"
+        else:
+            final_lat, final_lon = lat_il, lon_il
+            konum_adi = secilen_il
+
+        secilen_veriler = st.multiselect(
+            "Veriler:",
+            [ "Sıcaklık (850hPa)", "Sıcaklık (500hPa)", "Sıcaklık (2m)", "Dewpoint (2m)",        
+              "Kar Yağışı (cm)", "Yağış (mm)", "Rüzgar (10m)", "CAPE", "Basınç"],
+            default=["Sıcaklık (850hPa)", "Kar Yağışı (cm)"]
+        )
+        
+        btn_diyagram = st.button("Diyagramı Çiz", type="primary")
+
+    if btn_diyagram:
+        if not secilen_veriler:
+            st.error("Lütfen en az bir veri seç.")
+        else:
+            with st.spinner('Open-Meteo verisi çekiliyor...'):
+                data, mapping = get_local_data(final_lat, final_lon, secilen_veriler)
+                
+                if data:
+                    hourly = data['hourly']
+                    time = pd.to_datetime(hourly['time'])
+                    
+                    for secim in secilen_veriler:
+                        api_kod = mapping[secim]
+                        fig = go.Figure()
+                        cols = [k for k in hourly.keys() if k.startswith(api_kod) and 'member' in k]
+                        
+                        # Senaryolar (Gri çizgiler)
+                        for member in cols:
+                            fig.add_trace(go.Scatter(
+                                x=time, y=hourly[member],
+                                mode='lines', line=dict(color='lightgrey', width=0.5),
+                                opacity=0.5, showlegend=False, hoverinfo='skip'
+                            ))
+                        
+                        # Ortalama (Renkli çizgi)
+                        if cols:
+                            df_m = pd.DataFrame(hourly)[cols]
+                            mean_val = df_m.mean(axis=1)
+                            
+                            c = 'cyan'
+                            if "Sıcaklık (2m)" in secim: c = 'orange'
+                            elif "850hPa" in secim: c = 'red'
+                            elif "500hPa" in secim: c = 'purple' 
+                            elif "Dewpoint" in secim: c = 'lime'
+                            elif "Kar" in secim: c = 'white'
+                            elif "CAPE" in secim: c = 'yellow'
+                            
+                            fig.add_trace(go.Scatter(
+                                x=time, y=mean_val,
+                                mode='lines', line=dict(color=c, width=2.5),
+                                name='Ortalama'
+                            ))
+                        
+                        if "850hPa" in secim:
+                             fig.add_hline(y=-8, line_dash="dash", line_color="blue", opacity=0.5)
+
+                        fig.update_layout(
+                            title=dict(text=f"{secim} - {konum_adi}", font=dict(size=14)),
+                            template="plotly_dark", height=300,
+                            margin=dict(l=10, r=10, t=30, b=10),
+                            hovermode="x unified", showlegend=False
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+
+# --- TAB 2: HARİTALAR (Yeni Eklenen Kısım) ---
+with tab2:
+    st.info("⚠️ Haritalar anlık olarak NOAA sunucusundan indirilir. 'Güncelle' butonu veriyi yeniler (3-5 dk sürebilir).")
+    
+    col_btn, col_info = st.columns([1, 2])
+    with col_btn:
+        if st.button("Haritaları İndir ve Güncelle", type="primary"):
+            haritalari_olustur()
+    
+    st.divider()
+    
+    # Harita Gösterici
+    col_opt1, col_opt2 = st.columns(2)
+    with col_opt1:
+        harita_tipi = st.radio("Harita Tipi:", ["Sıcaklık (850hPa)", "Yağış"], horizontal=True)
+        dosya_on_ek = "sicaklik" if "Sıcaklık" in harita_tipi else "yagis"
+        
+    with col_opt2:
+        # 0'dan 240'a 6'şar saat atlayan slider
+        secilen_saat = st.select_slider("Vade (Saat):", options=range(0, 241, 6))
+        saat_str = f"{secilen_saat:03d}"
+
+    # Resim Yolu
+    resim_yolu = f"{HARITA_KLASOR}/{dosya_on_ek}_{saat_str}.png"
+    
+    if os.path.exists(resim_yolu):
+        st.image(resim_yolu, caption=f"GFS {harita_tipi} - Vade: +{secilen_saat} Saat", use_container_width=True)
+    else:
+        st.warning(f"Bu saat için harita bulunamadı ({secilen_saat}. saat). Lütfen 'Haritaları Güncelle' butonuna basın.")
