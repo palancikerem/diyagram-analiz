@@ -4,14 +4,14 @@ import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime, timezone
 
-
+# Sayfa Ayarları
 st.set_page_config(
     page_title="GFS Analiz - KeremPalancı", 
     layout="wide", 
     initial_sidebar_state="collapsed"
 )
 
-
+# CSS Düzenlemeleri
 st.markdown("""
     <style>
         .block-container { padding-top: 1rem; padding-bottom: 0rem; padding-left: 1rem; padding-right: 1rem; }
@@ -22,7 +22,7 @@ st.markdown("""
 
 st.title("GFS Diyagram - KeremPalancı")
 
-
+# Şehir Koordinatları
 TR_ILLER = {
     "Adana": [37.00, 35.32], "Adıyaman": [37.76, 38.28], "Afyonkarahisar": [38.75, 30.54],
     "Ağrı": [39.72, 43.05], "Aksaray": [38.37, 34.03], "Amasya": [40.65, 35.83],
@@ -61,9 +61,9 @@ def get_gfs_run_info():
     elif 15 <= hour < 21: return "12Z"
     else: return "18Z"
 
-
+# Arayüz
 with st.expander(" Konum / Veri Seçimi", expanded=True):
-   
+    # Üst Kısım: İl ve Senaryo Seçimi
     c_il, c_senaryo = st.columns([2, 1])
     
     with c_il:
@@ -77,15 +77,15 @@ with st.expander(" Konum / Veri Seçimi", expanded=True):
             lon_man = mc2.number_input("Boylam", value=28.97)
 
     with c_senaryo:
-        st.write("") 
-        st.write("") 
-       
+        st.write("") # Boşluk
+        st.write("") # Boşluk
         vurgulu_senaryolar = st.multiselect(
             "Senaryo Vurgula (0=Ana Çıktı)",
             options=range(0, 31),
             default=[]
         )
 
+    # Koordinat Belirleme
     if lat_man != 41.00 or lon_man != 28.97:
         final_lat, final_lon = lat_man, lon_man
         konum_adi = f"K: {final_lat},{final_lon}"
@@ -93,7 +93,7 @@ with st.expander(" Konum / Veri Seçimi", expanded=True):
         final_lat, final_lon = lat_il, lon_il
         konum_adi = secilen_il
 
- 
+    # Veri Listesi
     secilen_veriler = st.multiselect(
         "Veriler:",
         [
@@ -120,7 +120,7 @@ with st.expander(" Konum / Veri Seçimi", expanded=True):
     
     btn_calistir = st.button("Çalıştır", type="primary", use_container_width=True)
 
-
+# Veri Çekme (Önbellekli)
 @st.cache_data(ttl=3600)
 def get_local_data(lat, lon, variables):
     var_map = {
@@ -156,7 +156,7 @@ def get_local_data(lat, lon, variables):
     except:
         return None, None
 
-
+# Grafik Çizdirme
 if btn_calistir:
     if not secilen_veriler:
         st.error("Veri seç.")
@@ -172,49 +172,90 @@ if btn_calistir:
                     api_kod = mapping[secim]
                     fig = go.Figure()
                     
-               
+                    # İlgili veri sütunlarını bul
                     cols = [k for k in hourly.keys() if k.startswith(api_kod) and 'member' in k]
                     
-                
-                    for member in cols:
-                       
-                        try:
-                            mem_num = int(member.split('member')[1])
-                        except:
-                            mem_num = -1
-                        
-                      
-                        line_color = 'lightgrey'
-                        line_width = 0.7
-                        line_opacity = 0.5
-                        show_leg = False
-                        
-                   
-                        if mem_num in vurgulu_senaryolar:
-                            line_color = '#FF1493' 
-                            line_width = 2.0
-                            line_opacity = 1.0
-                            show_leg = True 
-                        
-                        senaryo_adi = f"Senaryo {mem_num}"
-                        if mem_num == 0: senaryo_adi += " (Ana)"
-
-                        fig.add_trace(go.Scatter(
-                            x=time, y=hourly[member],
-                            mode='lines', 
-                            line=dict(color=line_color, width=line_width),
-                            opacity=line_opacity,
-                            name=senaryo_adi,
-                            showlegend=show_leg,
-                            hovertemplate=f'<b>{senaryo_adi}</b>: %{{y:.1f}}<extra></extra>' 
-                        ))
-                    
-               
                     if cols:
                         df_m = pd.DataFrame(hourly)[cols]
-                        mean_val = df_m.mean(axis=1)
                         
-                       
+                        # --- HESAPLAMALAR ---
+                        # Her saat için Max, Min ve Ortalama hesapla
+                        mean_val = df_m.mean(axis=1)
+                        max_val = df_m.max(axis=1)
+                        min_val = df_m.min(axis=1)
+                        
+                        # Max ve Min'in hangi member olduğunu bul
+                        # Sütun isimlerinden sadece numarayı alacağız (örn: ...member13 -> 13)
+                        max_member_col = df_m.idxmax(axis=1)
+                        min_member_col = df_m.idxmin(axis=1)
+                        
+                        def clean_mem_name(col_name):
+                            try:
+                                return f"S-{col_name.split('member')[1]}"
+                            except:
+                                return "?"
+
+                        max_mem_names = max_member_col.apply(clean_mem_name)
+                        min_mem_names = min_member_col.apply(clean_mem_name)
+
+                        # --- SENARYOLAR DÖNGÜSÜ ---
+                        for member in cols:
+                            try:
+                                mem_num = int(member.split('member')[1])
+                            except:
+                                mem_num = -1
+                            
+                            # Varsayılan: Gri ve İnce
+                            line_color = 'lightgrey'
+                            line_width = 0.5
+                            line_opacity = 0.5
+                            show_leg = False
+                            # DİKKAT: Gri çizgilerin hover'ını kapattım (skip)
+                            hov_info = 'skip' 
+                            
+                            # VURGULU ise
+                            if mem_num in vurgulu_senaryolar:
+                                line_color = '#FF1493' # Canlı Pembe
+                                line_width = 2.0
+                                line_opacity = 1.0
+                                show_leg = True 
+                                hov_info = 'all' # Vurgulu olanın bilgisi görünsün
+                            
+                            senaryo_adi = f"Senaryo {mem_num}"
+
+                            fig.add_trace(go.Scatter(
+                                x=time, y=hourly[member],
+                                mode='lines', 
+                                line=dict(color=line_color, width=line_width),
+                                opacity=line_opacity,
+                                name=senaryo_adi,
+                                showlegend=show_leg,
+                                hoverinfo=hov_info,
+                                hovertemplate=f'<b>{senaryo_adi}</b>: %{{y:.1f}}<extra></extra>' 
+                            ))
+                        
+                        # --- AKILLI ÖZET KUTUSU (Görünmez Çizgi) ---
+                        # Bu çizgi çizilmez ama hover bilgisini taşır. Ortalamayı takip eder.
+                        
+                        hover_text = []
+                        for i in range(len(time)):
+                            t_str = f"<b>EN YÜKSEK:</b> {max_val[i]:.1f} ({max_mem_names[i]})<br>"
+                            t_str += f"<b>ORTALAMA:</b> {mean_val[i]:.1f}<br>"
+                            t_str += f"<b>EN DÜŞÜK:</b> {min_val[i]:.1f} ({min_mem_names[i]})"
+                            hover_text.append(t_str)
+                            
+                        fig.add_trace(go.Scatter(
+                            x=time, y=mean_val, # Ortalamayı takip etsin
+                            mode='lines',
+                            line=dict(color='rgba(0,0,0,0)', width=0), # Görünmez çizgi
+                            name='ÖZET',
+                            showlegend=False,
+                            hovertemplate="%{text}<extra></extra>",
+                            text=hover_text
+                        ))
+
+                        # --- ORTALAMA ÇİZGİSİ (Görsel) ---
+                        # Renk Ayarı
                         c = 'cyan'
                         if "Sıcaklık (2m)" in secim: c = 'orange'
                         elif "850hPa" in secim: c = 'red'
@@ -228,14 +269,15 @@ if btn_calistir:
                         elif "Hamlesi" in secim: c = 'pink'
                         elif "Donma" in secim: c = 'teal'
                         elif "GPH" in secim: c = 'gold'
-                        
+
                         fig.add_trace(go.Scatter(
                             x=time, y=mean_val,
                             mode='lines', line=dict(color=c, width=3),
                             name='ORTALAMA',
-                            hovertemplate='<b>ORTALAMA</b>: %{y:.1f}<extra></extra>'
+                            hoverinfo='skip' # Kendi hoverını kapattık, Özet kutusu yetiyor
                         ))
                     
+                    # Referans Çizgiler
                     if "850hPa" in secim:
                          fig.add_hline(y=-8, line_dash="dash", line_color="blue", opacity=0.5, annotation_text="-8 (Kar Sınırı)")
                     
@@ -246,7 +288,7 @@ if btn_calistir:
                         title=dict(text=f"{secim} - {konum_adi}", font=dict(size=14)),
                         template="plotly_dark", height=350,
                         margin=dict(l=10, r=10, t=30, b=10),
-                        hovermode="x unified", 
+                        hovermode="x unified",
                         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
                     )
                     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'staticPlot': False})
