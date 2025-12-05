@@ -4,25 +4,24 @@ import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime, timezone
 
-# --- Sayfa Ayarları ---
 st.set_page_config(
-    page_title="GFS Şehir Analiz", 
+    page_title="GFS Analiz", 
     layout="wide", 
     initial_sidebar_state="collapsed"
 )
 
-# --- CSS (Mobil Uyum) ---
+
 st.markdown("""
     <style>
         .block-container { padding-top: 1rem; padding-bottom: 0rem; padding-left: 1rem; padding-right: 1rem; }
         h1 { font-size: 1.5rem !important; }
+        .stSelectbox { margin-bottom: 0px; }
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🇹🇷 GFS Şehir Bazlı Analiz")
-st.markdown("İl seç, arkana yaslan, GFS modelini yorumla.")
+st.title("GFS Diyagram")
 
-# --- 81 İL KOORDİNAT LİSTESİ ---
+
 TR_ILLER = {
     "Adana": [37.00, 35.32], "Adıyaman": [37.76, 38.28], "Afyonkarahisar": [38.75, 30.54],
     "Ağrı": [39.72, 43.05], "Aksaray": [38.37, 34.03], "Amasya": [40.65, 35.83],
@@ -53,71 +52,65 @@ TR_ILLER = {
     "Yalova": [40.65, 29.27], "Yozgat": [39.82, 34.81], "Zonguldak": [41.45, 31.79]
 }
 
-# --- GFS GÜNCELLEME TAHMİNİ ---
 def get_gfs_run_info():
-    # Şu anki UTC saati al
     now_utc = datetime.now(timezone.utc)
     hour = now_utc.hour
-    
-    # GFS döngüleri: 00, 06, 12, 18 UTC
-    # Verinin işlenip API'ye düşmesi genelde 3-4 saat sürer.
-    if 3 <= hour < 9:
-        run = "00Z (Gece Güncellemesi)"
-    elif 9 <= hour < 15:
-        run = "06Z (Sabah Güncellemesi)"
-    elif 15 <= hour < 21:
-        run = "12Z (Öğle Güncellemesi)"
-    else:
-        run = "18Z (Akşam Güncellemesi)"
-    
-    return run
+    if 3 <= hour < 9: return "00Z"
+    elif 9 <= hour < 15: return "06Z"
+    elif 15 <= hour < 21: return "12Z"
+    else: return "18Z"
 
-# --- KONUM VE AYARLAR ---
-with st.expander("📍 Şehir Seçimi ve Ayarlar", expanded=True):
-    # Sekmeli Yapı: İster listeden seç, ister manuel gir
-    tab_sehir, tab_manuel = st.tabs(["🏙️ İl Listesi", "🗺️ Manuel Koordinat"])
+with st.expander(" Konum / Veri Seçimi", expanded=True):
+    tab_sehir, tab_manuel = st.tabs(["İl Listesi", "Manuel"])
     
     with tab_sehir:
-        secilen_il = st.selectbox("Bir İl Seç:", list(TR_ILLER.keys()), index=38) # 38: İstanbul
+        secilen_il = st.selectbox("İl:", list(TR_ILLER.keys()), index=38) 
         lat_il, lon_il = TR_ILLER[secilen_il]
     
     with tab_manuel:
-        col1, col2 = st.columns(2)
-        lat_man = col1.number_input("Enlem", value=41.00)
-        lon_man = col2.number_input("Boylam", value=28.97)
+        c1, c2 = st.columns(2)
+        lat_man = c1.number_input("Enlem", value=41.00)
+        lon_man = c2.number_input("Boylam", value=28.97)
 
-    # Hangi koordinatı kullanacağız?
     if lat_man != 41.00 or lon_man != 28.97:
         final_lat, final_lon = lat_man, lon_man
-        konum_adi = f"Manuel ({final_lat}, {final_lon})"
+        konum_adi = f"K: {final_lat},{final_lon}"
     else:
         final_lat, final_lon = lat_il, lon_il
         konum_adi = secilen_il
 
+    
     secilen_veriler = st.multiselect(
-        "Grafikler:",
+        "Veriler:",
         [
-            "Sıcaklık (850hPa)", "Kar Yağışı (cm)", "Yağış (mm)",
-            "Sıcaklık (2m)", "Rüzgar (Yerde)", "CAPE (Oraj)", "Basınç"
+            "Sıcaklık (850hPa)", 
+            "Sıcaklık (500hPa)",
+            "Sıcaklık (2m)", 
+            "Dewpoint (2m)",    
+            "Kar Yağışı (cm)", 
+            "Yağış (mm)",
+            "Rüzgar (10m)", 
+            "CAPE", 
+            "Basınç"
         ],
         default=["Sıcaklık (850hPa)", "Kar Yağışı (cm)"]
     )
     
-    # GÜNCELLEME BİLGİSİ
     run_info = get_gfs_run_info()
-    st.info(f"🕒 **Tahmini Model Çıktısı:** {run_info} | GFS Seamless")
+    st.caption(f"Model Çıktısı: **{run_info}** (Tahmini)")
     
-    btn_calistir = st.button("Analizi Başlat 🚀", type="primary", use_container_width=True)
+    btn_calistir = st.button("Çalıştır", type="primary", use_container_width=True)
 
-# --- FONSİYONLAR ---
 def get_local_data(lat, lon, variables):
     var_map = {
         "Sıcaklık (850hPa)": "temperature_850hPa",
+        "Sıcaklık (500hPa)": "temperature_500hPa", 
+        "Sıcaklık (2m)": "temperature_2m",
+        "Dewpoint (2m)": "dewpoint_2m",            
         "Kar Yağışı (cm)": "snowfall",
         "Yağış (mm)": "precipitation",
-        "Sıcaklık (2m)": "temperature_2m",
-        "Rüzgar (Yerde)": "windspeed_10m",
-        "CAPE (Oraj)": "cape",
+        "Rüzgar (10m)": "windspeed_10m",
+        "CAPE": "cape",
         "Basınç": "pressure_msl"
     }
     api_vars = [var_map[v] for v in variables]
@@ -136,12 +129,11 @@ def get_local_data(lat, lon, variables):
     except:
         return None, None
 
-# --- ANA İŞLEM ---
 if btn_calistir:
     if not secilen_veriler:
-        st.error("Grafik seçimi yapmalısın.")
+        st.error("Veri seç.")
     else:
-        with st.spinner(f'{konum_adi} için GFS verileri çekiliyor...'):
+        with st.spinner('Veri çekiliyor...'):
             data, mapping = get_local_data(final_lat, final_lon, secilen_veriler)
             
             if data:
@@ -153,7 +145,6 @@ if btn_calistir:
                     fig = go.Figure()
                     cols = [k for k in hourly.keys() if k.startswith(api_kod) and 'member' in k]
                     
-                    # Senaryolar
                     for member in cols:
                         fig.add_trace(go.Scatter(
                             x=time, y=hourly[member],
@@ -161,12 +152,16 @@ if btn_calistir:
                             opacity=0.5, showlegend=False, hoverinfo='skip'
                         ))
                     
-                    # Ortalama
                     if cols:
                         df_m = pd.DataFrame(hourly)[cols]
                         mean_val = df_m.mean(axis=1)
+                        
+                        
                         c = 'cyan'
-                        if "Sıcaklık" in secim: c = 'orange'
+                        if "Sıcaklık (2m)" in secim: c = 'orange'
+                        elif "850hPa" in secim: c = 'red'
+                        elif "500hPa" in secim: c = 'purple' 
+                        elif "Dewpoint" in secim: c = 'lime'
                         elif "Kar" in secim: c = 'white'
                         elif "CAPE" in secim: c = 'yellow'
                         
@@ -176,16 +171,14 @@ if btn_calistir:
                             name='Ortalama'
                         ))
                     
-                    # Kritik Çizgiler
+                 
                     if "850hPa" in secim:
                          fig.add_hline(y=-8, line_dash="dash", line_color="blue", opacity=0.5)
 
                     fig.update_layout(
                         title=dict(text=f"{secim} - {konum_adi}", font=dict(size=14)),
                         template="plotly_dark", height=300,
-                        margin=dict(l=10, r=10, t=40, b=10),
+                        margin=dict(l=10, r=10, t=30, b=10),
                         hovermode="x unified", showlegend=False
                     )
                     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'staticPlot': False})
-            else:
-                st.error("Sunucu hatası, tekrar dene.")
