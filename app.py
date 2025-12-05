@@ -4,40 +4,41 @@ import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime, timezone
 
-
+# --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="GFS Analiz - KeremPalancı", 
+    page_title="MeteoAnaliz Pro", 
     layout="wide", 
     initial_sidebar_state="collapsed"
 )
 
-
+# --- CSS (GÖRSELLİK) ---
 st.markdown("""
     <style>
-        .block-container { padding-top: 1rem; padding-bottom: 0rem; padding-left: 1rem; padding-right: 1rem; }
-        h1 { font-size: 1.5rem !important; }
+        .block-container { padding-top: 1rem; padding-bottom: 2rem; }
+        h1 { font-size: 1.8rem !important; color: #4FA5D6; }
         .stSelectbox { margin-bottom: 0px; }
+        div[data-testid="stMetricValue"] { font-size: 1.2rem; }
     </style>
 """, unsafe_allow_html=True)
 
-st.title("GFS Diyagram - KeremPalancı")
+st.title("🌪️ MeteoAnaliz - Çoklu Model Diyagramı")
 
-
+# --- ŞEHİR LİSTESİ ---
 TR_ILLER = {
+    "İstanbul": [41.00, 28.97], "Ankara": [39.93, 32.85], "İzmir": [38.42, 27.14],
     "Adana": [37.00, 35.32], "Adıyaman": [37.76, 38.28], "Afyonkarahisar": [38.75, 30.54],
     "Ağrı": [39.72, 43.05], "Aksaray": [38.37, 34.03], "Amasya": [40.65, 35.83],
-    "Ankara": [39.93, 32.85], "Antalya": [36.89, 30.71], "Ardahan": [41.11, 42.70],
-    "Artvin": [41.18, 41.82], "Aydın": [37.84, 27.84], "Balıkesir": [39.65, 27.88],
-    "Bartın": [41.63, 32.34], "Batman": [37.88, 41.13], "Bayburt": [40.26, 40.22],
-    "Bilecik": [40.14, 29.98], "Bingöl": [38.88, 40.49], "Bitlis": [38.40, 42.10],
-    "Bolu": [40.73, 31.61], "Burdur": [37.72, 30.29], "Bursa": [40.18, 29.06],
-    "Çanakkale": [40.15, 26.41], "Çankırı": [40.60, 33.61], "Çorum": [40.55, 34.95],
-    "Denizli": [37.77, 29.09], "Diyarbakır": [37.91, 40.24], "Düzce": [40.84, 31.16],
-    "Edirne": [41.68, 26.56], "Elazığ": [38.68, 39.22], "Erzincan": [39.75, 39.50],
-    "Erzurum": [39.90, 41.27], "Eskişehir": [39.78, 30.52], "Gaziantep": [37.06, 37.38],
-    "Giresun": [40.91, 38.39], "Gümüşhane": [40.46, 39.48], "Hakkari": [37.58, 43.74],
-    "Hatay": [36.40, 36.34], "Iğdır": [39.92, 44.04], "Isparta": [37.76, 30.56],
-    "İstanbul": [41.00, 28.97], "İzmir": [38.42, 27.14], "Kahramanmaraş": [37.58, 36.93],
+    "Antalya": [36.89, 30.71], "Ardahan": [41.11, 42.70], "Artvin": [41.18, 41.82],
+    "Aydın": [37.84, 27.84], "Balıkesir": [39.65, 27.88], "Bartın": [41.63, 32.34],
+    "Batman": [37.88, 41.13], "Bayburt": [40.26, 40.22], "Bilecik": [40.14, 29.98],
+    "Bingöl": [38.88, 40.49], "Bitlis": [38.40, 42.10], "Bolu": [40.73, 31.61],
+    "Burdur": [37.72, 30.29], "Bursa": [40.18, 29.06], "Çanakkale": [40.15, 26.41],
+    "Çankırı": [40.60, 33.61], "Çorum": [40.55, 34.95], "Denizli": [37.77, 29.09],
+    "Diyarbakır": [37.91, 40.24], "Düzce": [40.84, 31.16], "Edirne": [41.68, 26.56],
+    "Elazığ": [38.68, 39.22], "Erzincan": [39.75, 39.50], "Erzurum": [39.90, 41.27],
+    "Eskişehir": [39.78, 30.52], "Gaziantep": [37.06, 37.38], "Giresun": [40.91, 38.39],
+    "Gümüşhane": [40.46, 39.48], "Hakkari": [37.58, 43.74], "Hatay": [36.40, 36.34],
+    "Iğdır": [39.92, 44.04], "Isparta": [37.76, 30.56], "Kahramanmaraş": [37.58, 36.93],
     "Karabük": [41.20, 32.62], "Karaman": [37.18, 33.22], "Kars": [40.60, 43.10],
     "Kastamonu": [41.38, 33.78], "Kayseri": [38.73, 35.49], "Kırıkkale": [39.85, 33.51],
     "Kırklareli": [41.73, 27.22], "Kırşehir": [39.15, 34.17], "Kilis": [36.71, 37.11],
@@ -53,91 +54,72 @@ TR_ILLER = {
     "Yalova": [40.65, 29.27], "Yozgat": [39.82, 34.81], "Zonguldak": [41.45, 31.79]
 }
 
-def get_gfs_run_info():
+def get_run_info():
     now_utc = datetime.now(timezone.utc)
     hour = now_utc.hour
-    if 3 <= hour < 9: return "00Z"
-    elif 9 <= hour < 15: return "06Z"
-    elif 15 <= hour < 21: return "12Z"
-    else: return "18Z"
+    if 3 <= hour < 9: return "00Z (Gece)"
+    elif 9 <= hour < 15: return "06Z (Sabah)"
+    elif 15 <= hour < 21: return "12Z (Öğle)"
+    else: return "18Z (Akşam)"
 
-# Arayüz
-with st.expander(" Konum / Veri Seçimi", expanded=True):
-
-    c_il, c_senaryo = st.columns([2, 1])
+# --- ARAYÜZ KISMI ---
+with st.expander("📍 Ayarlar ve Konum", expanded=True):
+    col_a, col_b, col_c = st.columns([1.5, 1.5, 1])
     
-    with c_il:
-        tab_sehir, tab_manuel = st.tabs(["İl Listesi", "Manuel"])
-        with tab_sehir:
-            secilen_il = st.selectbox("İl:", list(TR_ILLER.keys()), index=38) 
-            lat_il, lon_il = TR_ILLER[secilen_il]
-        with tab_manuel:
-            mc1, mc2 = st.columns(2)
-            lat_man = mc1.number_input("Enlem", value=41.00)
-            lon_man = mc2.number_input("Boylam", value=28.97)
-
-    with c_senaryo:
-        st.write("")
-        st.write("") 
-        vurgulu_senaryolar = st.multiselect(
-            "Senaryo Vurgula (0=Ana Çıktı)",
-            options=range(0, 31),
-            default=[]
+    with col_a:
+        secilen_il = st.selectbox("Şehir Seç:", list(TR_ILLER.keys()), index=0)
+        lat_il, lon_il = TR_ILLER[secilen_il]
+    
+    with col_b:
+        # MODEL SEÇİMİ (YENİ ÖZELLİK)
+        secilen_model_adi = st.selectbox(
+            "Hava Durumu Modeli:",
+            ["GFS (Amerikan)", "ICON (Alman)", "GEM (Kanada)"]
         )
+        
+        # Model kodunu API için ayarla
+        if "GFS" in secilen_model_adi: model_api = "gfs_seamless"
+        elif "ICON" in secilen_model_adi: model_api = "icon_seamless"
+        elif "GEM" in secilen_model_adi: model_api = "gem_global"
 
-  
-    if lat_man != 41.00 or lon_man != 28.97:
-        final_lat, final_lon = lat_man, lon_man
-        konum_adi = f"K: {final_lat},{final_lon}"
-    else:
-        final_lat, final_lon = lat_il, lon_il
-        konum_adi = secilen_il
+    with col_c:
+        st.write("")
+        st.write("")
+        btn_calistir = st.button("ANALİZİ BAŞLAT", type="primary", use_container_width=True)
 
-   
-    secilen_veriler = st.multiselect(
-        "Veriler:",
-        [
-            "Sıcaklık (850hPa)", 
-            "Sıcaklık (500hPa)",
-            "Sıcaklık (2m)", 
-            "Dewpoint (2m)",
-            "Bağıl Nem (2m)",
-            "Kar Yağışı (cm)", 
-            "Yağış (mm)",
-            "Bulutluluk (%)",
-            "Rüzgar (10m)",
-            "Rüzgar Hamlesi",
-            "CAPE", 
-            "Basınç",
-            "GPH (500hPa)",
-            "Donma Seviyesi (m)"
-        ],
-        default=["Sıcaklık (850hPa)", "Kar Yağışı (cm)"]
-    )
-    
-    run_info = get_gfs_run_info()
-    st.caption(f"Model Çıktısı: **{run_info}** (Tahmini)")
-    
-    btn_calistir = st.button("Çalıştır", type="primary", use_container_width=True)
+    # İkinci satır: Veriler ve Vurgulama
+    c1, c2 = st.columns([3, 1])
+    with c1:
+        secilen_veriler = st.multiselect(
+            "Grafik Verileri:",
+            [
+                "Sıcaklık (850hPa)", "Sıcaklık (2m)", "Kar Yağışı (cm)", 
+                "Yağış (mm)", "Rüzgar (10m)", "Rüzgar Hamlesi", 
+                "Bağıl Nem (2m)", "Bulutluluk (%)", "Donma Seviyesi (m)",
+                "CAPE", "Basınç"
+            ],
+            default=["Sıcaklık (850hPa)", "Kar Yağışı (cm)"]
+        )
+    with c2:
+        vurgulu_senaryolar = st.multiselect("Vurgula (0=Ana):", options=range(0, 31))
 
+    st.caption(f"📅 Tahmin Zamanı: **{get_run_info()}** | Model: **{secilen_model_adi}**")
 
+# --- VERİ ÇEKME FONKSİYONU ---
 @st.cache_data(ttl=3600)
-def get_local_data(lat, lon, variables):
+def get_data(lat, lon, variables, model):
     var_map = {
         "Sıcaklık (850hPa)": "temperature_850hPa",
-        "Sıcaklık (500hPa)": "temperature_500hPa", 
         "Sıcaklık (2m)": "temperature_2m",
-        "Dewpoint (2m)": "dewpoint_2m",  
-        "Bağıl Nem (2m)": "relativehumidity_2m",
         "Kar Yağışı (cm)": "snowfall",
         "Yağış (mm)": "precipitation",
-        "Bulutluluk (%)": "cloudcover",
         "Rüzgar (10m)": "windspeed_10m",
         "Rüzgar Hamlesi": "windgusts_10m",
+        "Bağıl Nem (2m)": "relativehumidity_2m",
+        "Bulutluluk (%)": "cloudcover",
+        "Donma Seviyesi (m)": "freezinglevel_height",
         "CAPE": "cape",
-        "Basınç": "pressure_msl",
-        "GPH (500hPa)": "geopotential_height_500hPa",
-        "Donma Seviyesi (m)": "freezinglevel_height"
+        "Basınç": "pressure_msl"
     }
     
     api_vars = [var_map[v] for v in variables]
@@ -146,147 +128,159 @@ def get_local_data(lat, lon, variables):
     params = {
         "latitude": lat, "longitude": lon,
         "hourly": api_vars,
-        "models": "gfs_seamless",
+        "models": model, # Dinamik Model Seçimi
         "timezone": "auto"
     }
+    
     try:
         r = requests.get(url, params=params, timeout=15)
         r.raise_for_status()
         return r.json(), var_map
-    except:
+    except Exception as e:
         return None, None
 
-
+# --- ÇALIŞTIRMA VE GÖRSELLEŞTİRME ---
 if btn_calistir:
     if not secilen_veriler:
-        st.error("Veri seç.")
+        st.error("Lütfen en az bir veri seçin.")
     else:
-        with st.spinner('Veri çekiliyor...'):
-            data, mapping = get_local_data(final_lat, final_lon, secilen_veriler)
+        with st.spinner(f'{secilen_model_adi} verisi indiriliyor...'):
+            data, mapping = get_data(lat_il, lon_il, secilen_veriler, model_api)
             
             if data:
                 hourly = data['hourly']
                 time = pd.to_datetime(hourly['time'])
                 
+                # --- GRAFİKLER ---
                 for secim in secilen_veriler:
                     api_kod = mapping[secim]
                     fig = go.Figure()
                     
-                   
+                    # Veri sütunlarını bul
                     cols = [k for k in hourly.keys() if k.startswith(api_kod) and 'member' in k]
                     
                     if cols:
                         df_m = pd.DataFrame(hourly)[cols]
                         
-                      
+                        # İstatistikler
                         mean_val = df_m.mean(axis=1)
                         max_val = df_m.max(axis=1)
                         min_val = df_m.min(axis=1)
                         
-                        max_member_col = df_m.idxmax(axis=1)
-                        min_member_col = df_m.idxmin(axis=1)
-                        
-                        def clean_mem_name(col_name):
-                            try:
-                                return f"S-{col_name.split('member')[1]}"
-                            except:
-                                return "?"
+                        # Üye isimleri
+                        max_mem = df_m.idxmax(axis=1).apply(lambda x: x.split('member')[1] if 'member' in x else '?')
+                        min_mem = df_m.idxmin(axis=1).apply(lambda x: x.split('member')[1] if 'member' in x else '?')
 
-                        max_mem_names = max_member_col.apply(clean_mem_name)
-                        min_mem_names = min_member_col.apply(clean_mem_name)
-
-                        
+                        # Senaryo Çizgileri
                         for member in cols:
                             try:
                                 mem_num = int(member.split('member')[1])
-                            except:
-                                mem_num = -1
+                            except: mem_num = -1
                             
-                            # Varsayılan: Gri ve İnce
-                            line_color = 'lightgrey'
-                            line_width = 0.5
-                            line_opacity = 0.5
-                            show_leg = False
-                            hov_info = 'skip' 
+                            color, width, opacity, leg = 'lightgrey', 0.6, 0.4, False
+                            hover = 'skip'
                             
-                            
+                            # Vurgulama
                             if mem_num in vurgulu_senaryolar:
-                                line_color = '#FF1493' 
-                                line_width = 2.0
-                                line_opacity = 1.0
-                                show_leg = True 
-                                hov_info = 'all' 
+                                color, width, opacity, leg = '#FF1493', 2.5, 1.0, True
+                                hover = 'all'
                             
-                            senaryo_adi = f"Senaryo {mem_num}"
-
                             fig.add_trace(go.Scatter(
-                                x=time, y=hourly[member],
-                                mode='lines', 
-                                line=dict(color=line_color, width=line_width),
-                                opacity=line_opacity,
-                                name=senaryo_adi,
-                                showlegend=show_leg,
-                                hoverinfo=hov_info,
-                                hovertemplate=f'<b>{senaryo_adi}</b>: %{{y:.1f}}<extra></extra>' 
+                                x=time, y=hourly[member], mode='lines',
+                                line=dict(color=color, width=width), opacity=opacity,
+                                name=f"S-{mem_num}", showlegend=leg, hoverinfo=hover
                             ))
+
+                        # Akıllı Hover Kutusu
+                        hover_txt = [
+                            f"📅 <b>{t.strftime('%d.%m %H:%M')}</b><br>──────────<br>"
+                            f"🔺 Max: {mx:.1f} (S-{mxn})<br>"
+                            f"⚪ Ort: {mn:.1f}<br>"
+                            f"🔻 Min: {mi:.1f} (S-{minn})"
+                            for t, mx, mxn, mn, mi, minn in zip(time, max_val, max_mem, mean_val, min_val, min_mem)
+                        ]
                         
-                        
-                        
-                        hover_text = []
-                        for i in range(len(time)):
-                           
-                            t_str_fmt = time[i].strftime("%d.%m %H:%M")
-                            
-                            t_str = f"📅 <b>{t_str_fmt}</b><br>──────────────<br>"
-                            t_str += f" <b>EN YÜKSEK:</b> {max_val[i]:.1f} ({max_mem_names[i]})<br>"
-                            t_str += f" <b>ORTALAMA:</b> {mean_val[i]:.1f}<br>"
-                            t_str += f" <b>EN DÜŞÜK:</b> {min_val[i]:.1f} ({min_mem_names[i]})"
-                            hover_text.append(t_str)
-                            
                         fig.add_trace(go.Scatter(
-                            x=time, y=mean_val, 
-                            mode='lines',
-                            line=dict(color='rgba(0,0,0,0)', width=0),
-                            name='ÖZET',
-                            showlegend=False,
-                            hovertemplate="%{text}<extra></extra>",
-                            text=hover_text
+                            x=time, y=mean_val, mode='lines',
+                            line=dict(width=0), hovertemplate="%{text}<extra></extra>", text=hover_txt,
+                            name="Özet", showlegend=False
+                        ))
+                        
+                        # Ortalama Çizgisi (Renkli)
+                        c_map = {
+                            "850hPa": "red", "2m": "orange", "Kar": "white", 
+                            "Yağış": "cyan", "Rüzgar": "green", "Hamlesi": "lime",
+                            "Bulut": "gray", "Nem": "teal", "Basınç": "magenta"
+                        }
+                        main_color = next((v for k, v in c_map.items() if k in secim), "cyan")
+                        
+                        fig.add_trace(go.Scatter(
+                            x=time, y=mean_val, mode='lines',
+                            line=dict(color=main_color, width=3.5), name="ORTALAMA", hoverinfo='skip'
                         ))
 
-                        
-                        c = 'cyan'
-                        if "Sıcaklık (2m)" in secim: c = 'orange'
-                        elif "850hPa" in secim: c = 'red'
-                        elif "500hPa" in secim: c = 'purple' 
-                        elif "Dewpoint" in secim: c = 'lime'
-                        elif "Nem" in secim: c = 'green'
-                        elif "Kar" in secim: c = 'white'
-                        elif "CAPE" in secim: c = 'yellow'
-                        elif "Basınç" in secim: c = 'magenta'
-                        elif "Bulut" in secim: c = 'lightgray'
-                        elif "Hamlesi" in secim: c = 'pink'
-                        elif "Donma" in secim: c = 'teal'
-                        elif "GPH" in secim: c = 'gold'
+                        # Referanslar
+                        if "850hPa" in secim:
+                            fig.add_hline(y=-8, line_dash="dash", line_color="cyan", opacity=0.7, annotation_text="Kar Sınırı (-8)")
+                            fig.add_hline(y=0, line_dash="dash", line_color="orange", opacity=0.5)
 
-                        fig.add_trace(go.Scatter(
-                            x=time, y=mean_val,
-                            mode='lines', line=dict(color=c, width=3),
-                            name='ORTALAMA',
-                            hoverinfo='skip'
-                        ))
-                    
-                    
-                    if "850hPa" in secim:
-                         fig.add_hline(y=-8, line_dash="dash", line_color="blue", opacity=0.5, annotation_text="-8 (Kar Sınırı)")
-                    
-                    if "Donma" in secim:
-                         fig.add_hline(y=0, line_dash="dash", line_color="white", opacity=0.5)
+                        fig.update_layout(
+                            title=dict(text=f"{secilen_model_adi} | {secim} - {secilen_il}", font=dict(size=16)),
+                            template="plotly_dark", height=380,
+                            margin=dict(l=20, r=20, t=40, b=20),
+                            hovermode="x unified",
+                            legend=dict(orientation="h", y=1.02, x=1)
+                        )
+                        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-                    fig.update_layout(
-                        title=dict(text=f"{secim} - {konum_adi}", font=dict(size=14)),
-                        template="plotly_dark", height=350,
-                        margin=dict(l=10, r=10, t=30, b=10),
-                        hovermode="x unified",
-                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-                    )
-                    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'staticPlot': False})
+                        # --- OLASILIK / RİSK TABLOSU (YENİ) ---
+                        # Sadece Yağış ve Kar için hesaplayalım
+                        if "Kar" in secim or "Yağış" in secim or "850hPa" in secim:
+                            with st.expander(f"📊 {secim} - Olasılık ve Risk Analizi", expanded=False):
+                                # Günlük Bazda Özet
+                                df_daily = df_m.copy()
+                                df_daily['Day'] = time.dt.date
+                                
+                                # Günlük Maksimumları al
+                                daily_max = df_daily.groupby('Day').max()
+                                
+                                # Olasılık Hesabı
+                                if "Kar" in secim:
+                                    threshold = 1 # 1 cm üstü kar
+                                    label = "Kar Yağış İhtimali (>1cm)"
+                                elif "Yağış" in secim:
+                                    threshold = 1 # 1 mm üstü yağış
+                                    label = "Yağış İhtimali (>1mm)"
+                                elif "850hPa" in secim:
+                                    threshold = -8 # -8 derecenin altı (soğuk)
+                                    label = "Kar Yapıcı Soğuk İhtimali (<-8°C)"
+                                    # Soğuk için mantık ters (daha düşük değerler aranır)
+                                    daily_min = df_daily.groupby('Day').min() # Günün en düşüğüne bak
+                                    probs = (daily_min < threshold).sum(axis=1) / 31 * 100
+                                else:
+                                    threshold = 0
+                                    label = "Olasılık"
+                                    probs = []
+
+                                if "850hPa" not in secim:
+                                    probs = (daily_max > threshold).sum(axis=1) / 31 * 100
+                                
+                                # Tabloyu Oluştur
+                                if len(probs) > 0:
+                                    st.write(f"**{label}** (31 Senaryo Analizi)")
+                                    
+                                    # Metrik Kartları Yan Yana
+                                    cols_metric = st.columns(6) # İlk 6 günü gösterelim
+                                    for i, (day, prob) in enumerate(probs.items()):
+                                        if i < 6:
+                                            renk = "off"
+                                            if prob > 80: renk = "normal" # Kırmızımsı
+                                            elif prob > 40: renk = "normal"
+                                            
+                                            with cols_metric[i]:
+                                                st.metric(
+                                                    label=day.strftime("%d %b"), 
+                                                    value=f"%{int(prob)}",
+                                                    delta="Yüksek Risk" if prob > 70 else None
+                                                )
+                                                
