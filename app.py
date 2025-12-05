@@ -10,6 +10,13 @@ import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 import numpy as np
 
+import os
+
+# 'haritalar' yerine senin kodunda klasörün adı neyse onu yaz
+klasör_adi = 'haritalar' 
+
+if not os.path.exists(klasör_adi):
+    os.makedirs(klasör_adi)
 # --- SAYFA AYARLARI ---
 st.set_page_config(
     page_title="GFS Analiz Pro", 
