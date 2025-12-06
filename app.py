@@ -118,7 +118,7 @@ with st.expander("📍 Konum ve Ayarlar", expanded=True):
         "Veriler:",
         [
             "Sıcaklık (850hPa)", "Sıcaklık (500hPa)", "Sıcaklık (2m)", 
-            "Kar Yağışı (cm)", "Kar Kalınlığı (m)",
+            "Kar Yağışı (cm)", "Kar Kalınlığı (cm)", 
             "Toplam Yağış (mm)", "Rüzgar (10m)", "Rüzgar Hamlesi", 
             "Bağıl Nem (2m)", "Bulutluluk (%)", "Donma Seviyesi (m)",
             "CAPE", "Basınç"
@@ -135,8 +135,8 @@ def get_data(lat, lon, variables):
         "Sıcaklık (500hPa)": "temperature_500hPa",
         "Sıcaklık (2m)": "temperature_2m",
         "Kar Yağışı (cm)": "snowfall",
-        "Kar Kalınlığı (m)": "snow_depth",
-        "Toplam Yağış (mm)": "precipitation",
+        "Kar Kalınlığı (cm)": "snow_depth", 
+        "Yağış (mm)": "precipitation",
         "Rüzgar (10m)": "windspeed_10m",
         "Rüzgar Hamlesi": "windgusts_10m",
         "Bağıl Nem (2m)": "relativehumidity_2m",
@@ -170,6 +170,12 @@ if btn_calistir:
                     
                     if cols:
                         df_m = pd.DataFrame(hourly)[cols]
+                        
+              
+                        if secim == "Kar Kalınlığı (cm)":
+                            df_m = df_m * 100
+                      
+
                         mean_val = df_m.mean(axis=1)
                         max_val = df_m.max(axis=1)
                         min_val = df_m.min(axis=1)
@@ -187,15 +193,18 @@ if btn_calistir:
                                 c, w, o, leg = '#FF1493', 2.0, 1.0, True
                                 h = 'all' 
                             
-                            fig.add_trace(go.Scatter(x=time, y=hourly[member], mode='lines', line=dict(color=c, width=w), opacity=o, name=f"S-{mem_num}", showlegend=leg, hoverinfo=h))
+                      
+                            val_to_plot = df_m[member]
+                            
+                            fig.add_trace(go.Scatter(x=time, y=val_to_plot, mode='lines', line=dict(color=c, width=w), opacity=o, name=f"S-{mem_num}", showlegend=leg, hoverinfo=h))
                         
                         h_txt = [f"📅 <b>{t.strftime('%d.%m %H:%M')}</b><br>🔺 Max: {mx:.1f} (S-{mxn})<br>⚪ Ort: {mn:.1f}<br>🔻 Min: {mi:.1f} (S-{minn})" for t, mx, mxn, mn, mi, minn in zip(time, max_val, max_mem, mean_val, min_val, min_mem)]
                         fig.add_trace(go.Scatter(x=time, y=mean_val, mode='lines', line=dict(width=0), hovertemplate="%{text}<extra></extra>", text=h_txt, showlegend=False))
                         
-                       
+                      
                         c_map = {
                             "850hPa": "red", 
-                            "500hPa": "#00BFFF", 
+                            "500hPa": "#00BFFF",
                             "2m": "orange", 
                             "Kar": "white", 
                             "Yağış": "cyan", 
