@@ -114,18 +114,20 @@ with st.expander("📍 Konum ve Ayarlar", expanded=True):
     with col_info:
         st.caption(f"Seçili Konum: **{location_name}** ({selected_lat:.2f}, {selected_lon:.2f})")
 
+  
     secilen_veriler = st.multiselect(
         "Veriler:",
         [
             "Sıcaklık (850hPa)", "Sıcaklık (500hPa)", "Sıcaklık (2m)", 
-            "Kar Yağışı (cm)", "Kar Kalınlığı (cm)", 
-            "Yağış (mm)", "Rüzgar (10m)", "Rüzgar Hamlesi", 
+            "Kar Yağışı (cm)", "Kar Kalınlığı (cm)",
+            "Toplam Yağış (mm)", "Lifted Index (LI)", "CAPE (J/kg)",
+            "Rüzgar (10m)", "Rüzgar Hamlesi", 
             "Bağıl Nem (2m)", "Bulutluluk (%)", "Donma Seviyesi (m)",
-            "CAPE", "Basınç"
+            "Basınç"
         ],
-        default=["Sıcaklık (850hPa)", "Sıcaklık (500hPa)", "Yağış (mm)"]
+        default=["Sıcaklık (850hPa)", "Lifted Index (LI)", "Toplam Yağış (mm)"]
     )
-    vurgulu_senaryolar = st.multiselect("Senaryo Seç", options=range(0, 31))
+    vurgulu_senaryolar = st.multiselect("Senaryo Vurgula", options=range(0, 31))
     st.caption(f"📅 Model Run: **{get_run_info()}**")
 
 @st.cache_data(ttl=3600)
@@ -135,14 +137,15 @@ def get_data(lat, lon, variables):
         "Sıcaklık (500hPa)": "temperature_500hPa",
         "Sıcaklık (2m)": "temperature_2m",
         "Kar Yağışı (cm)": "snowfall",
-        "Kar Kalınlığı (cm)": "snow_depth", 
-        "Yağış (mm)": "precipitation",
+        "Kar Kalınlığı (cm)": "snow_depth",
+        "Toplam Yağış (mm)": "precipitation",
+        "Lifted Index (LI)": "lifted_index",
+        "CAPE (J/kg)": "cape",
         "Rüzgar (10m)": "windspeed_10m",
         "Rüzgar Hamlesi": "windgusts_10m",
         "Bağıl Nem (2m)": "relativehumidity_2m",
         "Bulutluluk (%)": "cloudcover",
         "Donma Seviyesi (m)": "freezinglevel_height",
-        "CAPE": "cape",
         "Basınç": "pressure_msl"
     }
     api_vars = [var_map[v] for v in variables]
@@ -171,10 +174,10 @@ if btn_calistir:
                     if cols:
                         df_m = pd.DataFrame(hourly)[cols]
                         
-              
+                       
                         if secim == "Kar Kalınlığı (cm)":
                             df_m = df_m * 100
-                      
+                       
 
                         mean_val = df_m.mean(axis=1)
                         max_val = df_m.max(axis=1)
@@ -193,7 +196,6 @@ if btn_calistir:
                                 c, w, o, leg = '#FF1493', 2.0, 1.0, True
                                 h = 'all' 
                             
-                      
                             val_to_plot = df_m[member]
                             
                             fig.add_trace(go.Scatter(x=time, y=val_to_plot, mode='lines', line=dict(color=c, width=w), opacity=o, name=f"S-{mem_num}", showlegend=leg, hoverinfo=h))
@@ -201,13 +203,15 @@ if btn_calistir:
                         h_txt = [f"📅 <b>{t.strftime('%d.%m %H:%M')}</b><br>🔺 Max: {mx:.1f} (S-{mxn})<br>⚪ Ort: {mn:.1f}<br>🔻 Min: {mi:.1f} (S-{minn})" for t, mx, mxn, mn, mi, minn in zip(time, max_val, max_mem, mean_val, min_val, min_mem)]
                         fig.add_trace(go.Scatter(x=time, y=mean_val, mode='lines', line=dict(width=0), hovertemplate="%{text}<extra></extra>", text=h_txt, showlegend=False))
                         
-                      
+                     
                         c_map = {
                             "850hPa": "red", 
                             "500hPa": "#00BFFF",
                             "2m": "orange", 
                             "Kar": "white", 
                             "Yağış": "cyan", 
+                            "LI": "#DC143C",
+                            "CAPE": "#DA70D6", 
                             "Rüzgar": "green", 
                             "Hamlesi": "lime", 
                             "Bulut": "gray", 
@@ -219,7 +223,12 @@ if btn_calistir:
                         
                         fig.add_trace(go.Scatter(x=time, y=mean_val, mode='lines', line=dict(color=main_c, width=3.0), name="ORTALAMA", showlegend=False, hoverinfo='skip'))
 
-                        if "Sıcaklık" in secim: fig.add_hline(y=0, line_dash="dash", line_color="orange", opacity=0.5)
+                        if "Sıcaklık" in secim: 
+                            fig.add_hline(y=0, line_dash="dash", line_color="orange", opacity=0.5)
+                        
+                      
+                        if "Lifted Index" in secim:
+                            fig.add_hline(y=0, line_dash="solid", line_color="white", opacity=0.8, annotation_text="Kararsızlık Sınırı")
 
                         fig.update_layout(
                             title=dict(text=f"{location_name} - {secim}", font=dict(size=14)),
@@ -229,7 +238,6 @@ if btn_calistir:
                             legend=dict(orientation="h", y=1, x=1)
                         )
 
-                      
                         chart_config = {
                             'displayModeBar': True,
                             'displaylogo': False,
