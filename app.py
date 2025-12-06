@@ -14,9 +14,11 @@ st.set_page_config(
 
 st.markdown("""
     <style>
-        .block-container { padding-top: 1rem; padding-bottom: 2rem; }
-        h1 { font-size: 1.8rem !important; color: #4FA5D6; }
+        .block-container { padding-top: 1rem; padding-bottom: 2rem; padding-left: 0.5rem; padding-right: 0.5rem; }
+        h1 { font-size: 1.5rem !important; color: #4FA5D6; text-align: center; }
         .stSelectbox { margin-bottom: 0px; }
+        /* Mobilde buton tam otursun */
+        div.stButton > button { width: 100%; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -70,27 +72,25 @@ with st.expander("📍 Ayarlar ve Konum", expanded=True):
         lat_il, lon_il = TR_ILLER[secilen_il]
     
     with col_b:
+        st.write("")
         st.write("") 
-        st.write("") 
-        btn_calistir = st.button("ANALİZİ BAŞLAT", type="primary", use_container_width=True)
+        btn_calistir = st.button("ANALİZ", type="primary", use_container_width=True)
 
-  
-    c1, c2 = st.columns([3, 1])
-    with c1:
-        secilen_veriler = st.multiselect(
-            "Grafik Verileri:",
-            [
-                "Sıcaklık (850hPa)", "Sıcaklık (2m)", "Kar Yağışı (cm)", 
-                "Yağış (mm)", "Rüzgar (10m)", "Rüzgar Hamlesi", 
-                "Bağıl Nem (2m)", "Bulutluluk (%)", "Donma Seviyesi (m)",
-                "CAPE", "Basınç"
-            ],
-            default=["Sıcaklık (850hPa)", "Kar Yağışı (cm)"]
-        )
-    with c2:
-        vurgulu_senaryolar = st.multiselect("Vurgula (0=Ana):", options=range(0, 31))
+   
+    secilen_veriler = st.multiselect(
+        "Veriler:",
+        [
+            "Sıcaklık (850hPa)", "Sıcaklık (2m)", "Kar Yağışı (cm)", 
+            "Yağış (mm)", "Rüzgar (10m)", "Rüzgar Hamlesi", 
+            "Bağıl Nem (2m)", "Bulutluluk (%)", "Donma Seviyesi (m)",
+            "CAPE", "Basınç"
+        ],
+        default=["Sıcaklık (850hPa)", "Kar Yağışı (cm)"]
+    )
+    
+    vurgulu_senaryolar = st.multiselect("Senaryo Seç (0=Ana):", options=range(0, 31))
 
-    st.caption(f"📅 Tahmin Zamanı: **{get_run_info()}** | Model: **GFS**")
+    st.caption(f"📅 Tahmin: **{get_run_info()}**")
 
 
 @st.cache_data(ttl=3600)
@@ -115,34 +115,30 @@ def get_data(lat, lon, variables):
     params = {
         "latitude": lat, "longitude": lon,
         "hourly": api_vars,
-        "models": "gfs_seamless", 
+        "models": "gfs_seamless",
         "timezone": "auto"
     }
-    
     try:
         r = requests.get(url, params=params, timeout=15)
         r.raise_for_status()
         return r.json(), var_map
-    except Exception as e:
-        return None, None
+    except: return None, None
 
 
 if btn_calistir:
     if not secilen_veriler:
-        st.error("Lütfen en az bir veri seçin.")
+        st.error("Veri seçin.")
     else:
-        with st.spinner('GFS verisi indiriliyor...'):
+        with st.spinner('Veri indiriliyor...'):
             data, mapping = get_data(lat_il, lon_il, secilen_veriler)
             
             if data:
                 hourly = data['hourly']
                 time = pd.to_datetime(hourly['time'])
                 
-               
                 for secim in secilen_veriler:
                     api_kod = mapping[secim]
                     fig = go.Figure()
-                    
                     
                     cols = [k for k in hourly.keys() if k.startswith(api_kod) and 'member' in k]
                     
@@ -154,22 +150,20 @@ if btn_calistir:
                         max_val = df_m.max(axis=1)
                         min_val = df_m.min(axis=1)
                         
-                      
+                        
                         max_mem = df_m.idxmax(axis=1).apply(lambda x: x.split('member')[1] if 'member' in x else '?')
                         min_mem = df_m.idxmin(axis=1).apply(lambda x: x.split('member')[1] if 'member' in x else '?')
 
                       
                         for member in cols:
-                            try:
-                                mem_num = int(member.split('member')[1])
+                            try: mem_num = int(member.split('member')[1])
                             except: mem_num = -1
                             
-                            color, width, opacity, leg = 'lightgrey', 0.6, 0.4, False
+                            color, width, opacity, leg = 'lightgrey', 0.5, 0.4, False
                             hover = 'skip'
                             
-                            
                             if mem_num in vurgulu_senaryolar:
-                                color, width, opacity, leg = '#FF1493', 2.5, 1.0, True
+                                color, width, opacity, leg = '#FF1493', 2.0, 1.0, True
                                 hover = 'all'
                             
                             fig.add_trace(go.Scatter(
@@ -178,9 +172,9 @@ if btn_calistir:
                                 name=f"S-{mem_num}", showlegend=leg, hoverinfo=hover
                             ))
 
-                       
+                     
                         hover_txt = [
-                            f"📅 <b>{t.strftime('%d.%m %H:%M')}</b><br>──────────<br>"
+                            f"📅 <b>{t.strftime('%d.%m %H:%M')}</b><br>"
                             f"🔺 Max: {mx:.1f} (S-{mxn})<br>"
                             f"⚪ Ort: {mn:.1f}<br>"
                             f"🔻 Min: {mi:.1f} (S-{minn})"
@@ -193,7 +187,7 @@ if btn_calistir:
                             name="Özet", showlegend=False
                         ))
                         
-                        
+                 
                         c_map = {
                             "850hPa": "red", "2m": "orange", "Kar": "white", 
                             "Yağış": "cyan", "Rüzgar": "green", "Hamlesi": "lime",
@@ -203,19 +197,19 @@ if btn_calistir:
                         
                         fig.add_trace(go.Scatter(
                             x=time, y=mean_val, mode='lines',
-                            line=dict(color=main_color, width=3.5), name="ORTALAMA", hoverinfo='skip'
+                            line=dict(color=main_color, width=3.0), name="ORTALAMA", hoverinfo='skip'
                         ))
 
-                       
                         if "850hPa" in secim:
-                            
-                            fig.add_hline(y=0, line_dash="dash", line_color="orange", opacity=0.5)
+                            fig.add_hline(y=0, line_dash="dash", line_color="orange", opacity=0.6)
 
+                   
                         fig.update_layout(
-                            title=dict(text=f"GFS | {secim} - {secilen_il}", font=dict(size=16)),
-                            template="plotly_dark", height=380,
-                            margin=dict(l=20, r=20, t=40, b=20),
+                            title=dict(text=f"{secim}", font=dict(size=14)),
+                            template="plotly_dark", 
+                            height=500, 
+                            margin=dict(l=5, r=5, t=40, b=10), 
                             hovermode="x unified",
-                            legend=dict(orientation="h", y=1.02, x=1)
+                            legend=dict(orientation="h", y=1.02, x=1, font=dict(size=10))
                         )
                         st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
