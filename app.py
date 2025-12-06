@@ -218,9 +218,9 @@ if btn_calistir:
                             line=dict(color=main_color, width=3.5), name="ORTALAMA", hoverinfo='skip'
                         ))
 
-                        # Referanslar
+                        # Referanslar (Sadece 0 Çizgisi Kaldı)
                         if "850hPa" in secim:
-                            fig.add_hline(y=-8, line_dash="dash", line_color="cyan", opacity=0.7, annotation_text="Kar Sınırı (-8)")
+                            # -8 Çizgisi Kaldırıldı
                             fig.add_hline(y=0, line_dash="dash", line_color="orange", opacity=0.5)
 
                         fig.update_layout(
