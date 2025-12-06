@@ -125,7 +125,7 @@ with st.expander("📍 Konum ve Ayarlar", expanded=True):
         ],
         default=["Sıcaklık (850hPa)", "Sıcaklık (500hPa)", "Yağış (mm)"]
     )
-    vurgulu_senaryolar = st.multiselect("Senaryo Vurgula", options=range(0, 31))
+    vurgulu_senaryolar = st.multiselect("Senaryo Seç", options=range(0, 31))
     st.caption(f"📅 Model Run: **{get_run_info()}**")
 
 @st.cache_data(ttl=3600)
