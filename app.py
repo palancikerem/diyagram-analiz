@@ -14,11 +14,14 @@ st.set_page_config(
 
 st.markdown("""
     <style>
-        .block-container { padding-top: 1rem; padding-bottom: 2rem; padding-left: 0.5rem; padding-right: 0.5rem; }
-        h1 { font-size: 1.5rem !important; color: #4FA5D6; text-align: center; }
-        .stSelectbox { margin-bottom: 0px; }
-        /* Mobilde buton tam otursun */
-        div.stButton > button { width: 100%; }
+        /* Kenar boşluklarını sıfırla */
+        .block-container { padding-top: 0.5rem; padding-bottom: 1rem; padding-left: 0.2rem; padding-right: 0.2rem; }
+        h1 { font-size: 1.3rem !important; color: #4FA5D6; text-align: center; margin-bottom: 0px; }
+        /* Buton ve kutuları sıkılaştır */
+        .stSelectbox, .stMultiSelect { margin-bottom: 0px; }
+        div.stButton > button { width: 100%; border-radius: 8px; }
+        /* Plotly grafiği tam otursun */
+        .main-svg { border-radius: 8px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -64,19 +67,16 @@ def get_run_info():
     else: return "18Z (Akşam)"
 
 
-with st.expander("📍 Ayarlar ve Konum", expanded=True):
+with st.expander("📍 Ayarlar", expanded=True):
     col_a, col_b = st.columns([3, 1])
-    
     with col_a:
-        secilen_il = st.selectbox("Şehir Seç:", list(TR_ILLER.keys()), index=0)
+        secilen_il = st.selectbox("Şehir:", list(TR_ILLER.keys()), index=0)
         lat_il, lon_il = TR_ILLER[secilen_il]
-    
     with col_b:
         st.write("")
         st.write("") 
-        btn_calistir = st.button("ANALİZ", type="primary", use_container_width=True)
+        btn_calistir = st.button("Başlat", type="primary", use_container_width=True)
 
-   
     secilen_veriler = st.multiselect(
         "Veriler:",
         [
@@ -87,10 +87,8 @@ with st.expander("📍 Ayarlar ve Konum", expanded=True):
         ],
         default=["Sıcaklık (850hPa)", "Kar Yağışı (cm)"]
     )
-    
-    vurgulu_senaryolar = st.multiselect("Senaryo Seç (0=Ana):", options=range(0, 31))
-
-    st.caption(f"📅 Tahmin: **{get_run_info()}**")
+    vurgulu_senaryolar = st.multiselect("Vurgula:", options=range(0, 31))
+    st.caption(f"📅 Model: **{get_run_info()}**")
 
 
 @st.cache_data(ttl=3600)
@@ -108,16 +106,9 @@ def get_data(lat, lon, variables):
         "CAPE": "cape",
         "Basınç": "pressure_msl"
     }
-    
     api_vars = [var_map[v] for v in variables]
-    
     url = "https://ensemble-api.open-meteo.com/v1/ensemble"
-    params = {
-        "latitude": lat, "longitude": lon,
-        "hourly": api_vars,
-        "models": "gfs_seamless",
-        "timezone": "auto"
-    }
+    params = {"latitude": lat, "longitude": lon, "hourly": api_vars, "models": "gfs_seamless", "timezone": "auto"}
     try:
         r = requests.get(url, params=params, timeout=15)
         r.raise_for_status()
@@ -126,12 +117,10 @@ def get_data(lat, lon, variables):
 
 
 if btn_calistir:
-    if not secilen_veriler:
-        st.error("Veri seçin.")
+    if not secilen_veriler: st.error("Veri seçin.")
     else:
-        with st.spinner('Veri indiriliyor...'):
+        with st.spinner('Veri alınıyor...'):
             data, mapping = get_data(lat_il, lon_il, secilen_veriler)
-            
             if data:
                 hourly = data['hourly']
                 time = pd.to_datetime(hourly['time'])
@@ -139,77 +128,48 @@ if btn_calistir:
                 for secim in secilen_veriler:
                     api_kod = mapping[secim]
                     fig = go.Figure()
-                    
                     cols = [k for k in hourly.keys() if k.startswith(api_kod) and 'member' in k]
                     
                     if cols:
                         df_m = pd.DataFrame(hourly)[cols]
-                        
-                        
                         mean_val = df_m.mean(axis=1)
                         max_val = df_m.max(axis=1)
                         min_val = df_m.min(axis=1)
                         
-                        
                         max_mem = df_m.idxmax(axis=1).apply(lambda x: x.split('member')[1] if 'member' in x else '?')
                         min_mem = df_m.idxmin(axis=1).apply(lambda x: x.split('member')[1] if 'member' in x else '?')
 
-                      
+                       
                         for member in cols:
                             try: mem_num = int(member.split('member')[1])
                             except: mem_num = -1
                             
-                            color, width, opacity, leg = 'lightgrey', 0.5, 0.4, False
-                            hover = 'skip'
-                            
+                            c, w, o, leg = 'lightgrey', 0.5, 0.4, False
+                            h = 'skip'
                             if mem_num in vurgulu_senaryolar:
-                                color, width, opacity, leg = '#FF1493', 2.0, 1.0, True
-                                hover = 'all'
+                                c, w, o, leg = '#FF1493', 2.0, 1.0, True
+                                h = 'all' 
                             
-                            fig.add_trace(go.Scatter(
-                                x=time, y=hourly[member], mode='lines',
-                                line=dict(color=color, width=width), opacity=opacity,
-                                name=f"S-{mem_num}", showlegend=leg, hoverinfo=hover
-                            ))
+                            fig.add_trace(go.Scatter(x=time, y=hourly[member], mode='lines', line=dict(color=c, width=w), opacity=o, name=f"S-{mem_num}", showlegend=leg, hoverinfo=h))
 
-                     
-                        hover_txt = [
-                            f"📅 <b>{t.strftime('%d.%m %H:%M')}</b><br>"
-                            f"🔺 Max: {mx:.1f} (S-{mxn})<br>"
-                            f"⚪ Ort: {mn:.1f}<br>"
-                            f"🔻 Min: {mi:.1f} (S-{minn})"
-                            for t, mx, mxn, mn, mi, minn in zip(time, max_val, max_mem, mean_val, min_val, min_mem)
-                        ]
                         
-                        fig.add_trace(go.Scatter(
-                            x=time, y=mean_val, mode='lines',
-                            line=dict(width=0), hovertemplate="%{text}<extra></extra>", text=hover_txt,
-                            name="Özet", showlegend=False
-                        ))
+                        h_txt = [f"📅 <b>{t.strftime('%d.%m %H:%M')}</b><br>🔺 Max: {mx:.1f} (S-{mxn})<br>⚪ Ort: {mn:.1f}<br>🔻 Min: {mi:.1f} (S-{minn})" for t, mx, mxn, mn, mi, minn in zip(time, max_val, max_mem, mean_val, min_val, min_mem)]
+                        fig.add_trace(go.Scatter(x=time, y=mean_val, mode='lines', line=dict(width=0), hovertemplate="%{text}<extra></extra>", text=h_txt, showlegend=False))
                         
-                 
-                        c_map = {
-                            "850hPa": "red", "2m": "orange", "Kar": "white", 
-                            "Yağış": "cyan", "Rüzgar": "green", "Hamlesi": "lime",
-                            "Bulut": "gray", "Nem": "teal", "Basınç": "magenta"
-                        }
-                        main_color = next((v for k, v in c_map.items() if k in secim), "cyan")
+                      
+                        c_map = {"850hPa": "red", "2m": "orange", "Kar": "white", "Yağış": "cyan", "Rüzgar": "green", "Hamlesi": "lime", "Bulut": "gray", "Nem": "teal", "Basınç": "magenta"}
+                        main_c = next((v for k, v in c_map.items() if k in secim), "cyan")
                         
-                        fig.add_trace(go.Scatter(
-                            x=time, y=mean_val, mode='lines',
-                            line=dict(color=main_color, width=3.0), name="ORTALAMA", hoverinfo='skip'
-                        ))
+                        
+                        fig.add_trace(go.Scatter(x=time, y=mean_val, mode='lines', line=dict(color=main_c, width=3.0), name="ORTALAMA", showlegend=False, hoverinfo='skip'))
 
-                        if "850hPa" in secim:
-                            fig.add_hline(y=0, line_dash="dash", line_color="orange", opacity=0.6)
+                        if "850hPa" in secim: fig.add_hline(y=0, line_dash="dash", line_color="orange", opacity=0.5)
 
-                   
                         fig.update_layout(
                             title=dict(text=f"{secim}", font=dict(size=14)),
-                            template="plotly_dark", 
-                            height=500, 
-                            margin=dict(l=5, r=5, t=40, b=10), 
+                            template="plotly_dark", height=500,
+                            margin=dict(l=2, r=2, t=30, b=5), 
                             hovermode="x unified",
-                            legend=dict(orientation="h", y=1.02, x=1, font=dict(size=10))
+                            legend=dict(orientation="h", y=1, x=1)
                         )
                         st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
