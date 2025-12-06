@@ -4,14 +4,14 @@ import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime, timezone
 
-# --- SAYFA AYARLARI ---
+
 st.set_page_config(
-    page_title="MeteoAnaliz Pro - GFS", 
+    page_title="GFS - KeremPalancı", 
     layout="wide", 
     initial_sidebar_state="collapsed"
 )
 
-# --- CSS (GÖRSELLİK) ---
+
 st.markdown("""
     <style>
         .block-container { padding-top: 1rem; padding-bottom: 2rem; }
@@ -20,9 +20,9 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🌪️ MeteoAnaliz - GFS Diyagramı")
+st.title("Meteorolojik Diyagramlar - KeremPalancı")
 
-# --- ŞEHİR LİSTESİ ---
+
 TR_ILLER = {
     "İstanbul": [41.00, 28.97], "Ankara": [39.93, 32.85], "İzmir": [38.42, 27.14],
     "Adana": [37.00, 35.32], "Adıyaman": [37.76, 38.28], "Afyonkarahisar": [38.75, 30.54],
@@ -61,20 +61,20 @@ def get_run_info():
     elif 15 <= hour < 21: return "12Z (Öğle)"
     else: return "18Z (Akşam)"
 
-# --- ARAYÜZ KISMI ---
+
 with st.expander("📍 Ayarlar ve Konum", expanded=True):
-    col_a, col_b = st.columns([3, 1]) # Model seçimi gitti, 2 sütun kaldı
+    col_a, col_b = st.columns([3, 1])
     
     with col_a:
         secilen_il = st.selectbox("Şehir Seç:", list(TR_ILLER.keys()), index=0)
         lat_il, lon_il = TR_ILLER[secilen_il]
     
     with col_b:
-        st.write("") # Hizalama için boşluk
+        st.write("") 
         st.write("") 
         btn_calistir = st.button("ANALİZİ BAŞLAT", type="primary", use_container_width=True)
 
-    # İkinci satır: Veriler ve Vurgulama
+  
     c1, c2 = st.columns([3, 1])
     with c1:
         secilen_veriler = st.multiselect(
@@ -90,9 +90,9 @@ with st.expander("📍 Ayarlar ve Konum", expanded=True):
     with c2:
         vurgulu_senaryolar = st.multiselect("Vurgula (0=Ana):", options=range(0, 31))
 
-    st.caption(f"📅 Tahmin Zamanı: **{get_run_info()}** | Model: **GFS (Amerikan)**")
+    st.caption(f"📅 Tahmin Zamanı: **{get_run_info()}** | Model: **GFS**")
 
-# --- VERİ ÇEKME FONKSİYONU ---
+
 @st.cache_data(ttl=3600)
 def get_data(lat, lon, variables):
     var_map = {
@@ -115,7 +115,7 @@ def get_data(lat, lon, variables):
     params = {
         "latitude": lat, "longitude": lon,
         "hourly": api_vars,
-        "models": "gfs_seamless", # SABİT GFS
+        "models": "gfs_seamless", 
         "timezone": "auto"
     }
     
@@ -126,7 +126,7 @@ def get_data(lat, lon, variables):
     except Exception as e:
         return None, None
 
-# --- ÇALIŞTIRMA VE GÖRSELLEŞTİRME ---
+
 if btn_calistir:
     if not secilen_veriler:
         st.error("Lütfen en az bir veri seçin.")
@@ -138,27 +138,27 @@ if btn_calistir:
                 hourly = data['hourly']
                 time = pd.to_datetime(hourly['time'])
                 
-                # --- GRAFİKLER ---
+               
                 for secim in secilen_veriler:
                     api_kod = mapping[secim]
                     fig = go.Figure()
                     
-                    # Veri sütunlarını bul
+                    
                     cols = [k for k in hourly.keys() if k.startswith(api_kod) and 'member' in k]
                     
                     if cols:
                         df_m = pd.DataFrame(hourly)[cols]
                         
-                        # İstatistikler
+                        
                         mean_val = df_m.mean(axis=1)
                         max_val = df_m.max(axis=1)
                         min_val = df_m.min(axis=1)
                         
-                        # Üye isimleri
+                      
                         max_mem = df_m.idxmax(axis=1).apply(lambda x: x.split('member')[1] if 'member' in x else '?')
                         min_mem = df_m.idxmin(axis=1).apply(lambda x: x.split('member')[1] if 'member' in x else '?')
 
-                        # Senaryo Çizgileri
+                      
                         for member in cols:
                             try:
                                 mem_num = int(member.split('member')[1])
@@ -167,7 +167,7 @@ if btn_calistir:
                             color, width, opacity, leg = 'lightgrey', 0.6, 0.4, False
                             hover = 'skip'
                             
-                            # Vurgulama
+                            
                             if mem_num in vurgulu_senaryolar:
                                 color, width, opacity, leg = '#FF1493', 2.5, 1.0, True
                                 hover = 'all'
@@ -178,7 +178,7 @@ if btn_calistir:
                                 name=f"S-{mem_num}", showlegend=leg, hoverinfo=hover
                             ))
 
-                        # Akıllı Hover Kutusu
+                       
                         hover_txt = [
                             f"📅 <b>{t.strftime('%d.%m %H:%M')}</b><br>──────────<br>"
                             f"🔺 Max: {mx:.1f} (S-{mxn})<br>"
@@ -193,7 +193,7 @@ if btn_calistir:
                             name="Özet", showlegend=False
                         ))
                         
-                        # Ortalama Çizgisi (Renkli)
+                        
                         c_map = {
                             "850hPa": "red", "2m": "orange", "Kar": "white", 
                             "Yağış": "cyan", "Rüzgar": "green", "Hamlesi": "lime",
@@ -206,9 +206,9 @@ if btn_calistir:
                             line=dict(color=main_color, width=3.5), name="ORTALAMA", hoverinfo='skip'
                         ))
 
-                        # Referanslar (Sadece 0 Çizgisi Kaldı)
+                       
                         if "850hPa" in secim:
-                            # 0 Derece Çizgisi (Donma Noktası)
+                            
                             fig.add_hline(y=0, line_dash="dash", line_color="orange", opacity=0.5)
 
                         fig.update_layout(
