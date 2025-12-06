@@ -61,6 +61,7 @@ TR_ILLER = {
     "Tunceli": [39.11, 39.55], "Uşak": [38.68, 29.41], "Van": [38.50, 43.38],
     "Yalova": [40.65, 29.27], "Yozgat": [39.82, 34.81], "Zonguldak": [41.45, 31.79]
 }
+
 def get_run_info():
     now_utc = datetime.now(timezone.utc)
     hour = now_utc.hour
@@ -151,7 +152,7 @@ with tab_diyagram:
                             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
 # ==============================================================================
-# SEKME 2: EXPERT PROFIL & HODOGRAF (Düzeltilmiş Görünüm)
+# SEKME 2: EXPERT PROFIL & HODOGRAF (GÜZELLEŞTİRİLMİŞ SKEWT)
 # ==============================================================================
 with tab_expert:
     btn_expert = st.button("Expert Analizi Başlat (GFS Ana Çıktı)", type="primary")
@@ -221,27 +222,166 @@ with tab_expert:
                     u_w.append(-w * np.sin(rad)); v_w.append(-w * np.cos(rad))
                 except: pass
 
-            col_skew, col_hodo = st.columns([3, 2]) # Sol tarafı daha geniş tuttum
+            col_skew, col_hodo = st.columns([3, 2])
 
-            # --- SOL: PROFİL (DÜZELTİLMİŞ GÖRÜNÜM) ---
+            # --- SOL: PROFESYONEL SKEWT DİYAGRAMI ---
             with col_skew:
-                fig = go.Figure()
-                fig.add_trace(go.Scatter(x=temps, y=press, mode='lines+markers', name='Sıcaklık', line=dict(color='red', width=3)))
-                fig.add_trace(go.Scatter(x=dews, y=press, mode='lines+markers', name='Dewpoint', line=dict(color='#00FF00', width=2)))
-                fig.add_trace(go.Scatter(x=temps + dews[::-1], y=press + press[::-1], fill='toself', fillcolor='rgba(0, 255, 0, 0.1)', line=dict(color='rgba(0,0,0,0)'), showlegend=False, hoverinfo='skip'))
-                fig.add_vline(x=0, line_color="cyan", line_width=1, opacity=0.7, annotation_text="0°C")
+                def skew_transform(T_val, p_val):
+                    """Sıcaklığı eğik eksene dönüştür (SkewT transformasyonu)"""
+                    return T_val + (np.log(1000/p_val) * 40)
                 
-                # İşte "Basık" Görünümü Düzelten Ayarlar:
+                press_np = np.array(press)
+                temps_np = np.array(temps)
+                dews_np = np.array(dews)
+                
+                # Transform edilmiş koordinatlar
+                T_skewed = skew_transform(temps_np, press_np)
+                Td_skewed = skew_transform(dews_np, press_np)
+                
+                fig = go.Figure()
+                
+                # Kuru adiabatlar (turuncu)
+                for theta in range(-40, 121, 10):
+                    T_line, p_line = [], []
+                    for p in np.linspace(1000, 100, 40):
+                        T_adiabat = theta * (p/1000)**0.286
+                        if -70 < T_adiabat < 50:
+                            T_line.append(skew_transform(T_adiabat, p))
+                            p_line.append(p)
+                    if T_line:
+                        fig.add_trace(go.Scatter(
+                            x=T_line, y=p_line, mode='lines',
+                            line=dict(color='rgba(255, 120, 0, 0.2)', width=1),
+                            showlegend=False, hoverinfo='skip'
+                        ))
+                
+                # Doygun adiabatlar (mavi)
+                for T_start in range(-30, 51, 10):
+                    T_line, p_line = [], []
+                    for p in np.linspace(1000, 200, 30):
+                        T_moist = T_start - (1000 - p) * 0.006
+                        if -70 < T_moist < 50:
+                            T_line.append(skew_transform(T_moist, p))
+                            p_line.append(p)
+                    if T_line:
+                        fig.add_trace(go.Scatter(
+                            x=T_line, y=p_line, mode='lines',
+                            line=dict(color='rgba(0, 150, 255, 0.2)', width=1),
+                            showlegend=False, hoverinfo='skip'
+                        ))
+                
+                # Karışım oranı çizgileri (yeşil)
+                for mixing in [1, 2, 4, 8, 12, 16, 20]:
+                    T_line, p_line = [], []
+                    for p in np.linspace(1000, 400, 20):
+                        T_mix = -20 + mixing * 3 - (1000-p) * 0.01
+                        if -70 < T_mix < 50:
+                            T_line.append(skew_transform(T_mix, p))
+                            p_line.append(p)
+                    if T_line:
+                        fig.add_trace(go.Scatter(
+                            x=T_line, y=p_line, mode='lines',
+                            line=dict(color='rgba(50, 200, 50, 0.2)', width=1),
+                            showlegend=False, hoverinfo='skip'
+                        ))
+                
+                # İzoterm çizgileri (gri dikey)
+                for temp in range(-60, 51, 10):
+                    temp_line = [skew_transform(temp, p) for p in [1000, 100]]
+                    fig.add_trace(go.Scatter(
+                        x=temp_line, y=[1000, 100], mode='lines',
+                        line=dict(color='rgba(150, 150, 150, 0.3)', width=0.8, dash='dot'),
+                        showlegend=False, hoverinfo='skip'
+                    ))
+                
+                # Sıcaklık - Çiğ noktası arası alan (yeşil gölge)
+                fill_x = list(T_skewed) + list(Td_skewed[::-1])
+                fill_y = list(press_np) + list(press_np[::-1])
+                fig.add_trace(go.Scatter(
+                    x=fill_x, y=fill_y,
+                    fill='toself',
+                    fillcolor='rgba(0, 255, 100, 0.15)',
+                    line=dict(color='rgba(0,0,0,0)'),
+                    showlegend=False,
+                    hoverinfo='skip'
+                ))
+                
+                # Sıcaklık profili (kırmızı)
+                fig.add_trace(go.Scatter(
+                    x=T_skewed, y=press_np,
+                    mode='lines+markers',
+                    line=dict(color='#FF3333', width=3.5),
+                    marker=dict(size=7, color='#FF3333', line=dict(width=1, color='white')),
+                    name='Sıcaklık',
+                    hovertemplate='<b>%{text}</b><br>T: %{customdata:.1f}°C<extra></extra>',
+                    text=[f'{int(p)} hPa' for p in press_np],
+                    customdata=temps_np
+                ))
+                
+                # Çiğ noktası profili (yeşil)
+                fig.add_trace(go.Scatter(
+                    x=Td_skewed, y=press_np,
+                    mode='lines+markers',
+                    line=dict(color='#00FF66', width=3.5),
+                    marker=dict(size=7, color='#00FF66', line=dict(width=1, color='white')),
+                    name='Çiğ Noktası',
+                    hovertemplate='<b>%{text}</b><br>Td: %{customdata:.1f}°C<extra></extra>',
+                    text=[f'{int(p)} hPa' for p in press_np],
+                    customdata=dews_np
+                ))
+                
+                # 0°C çizgisi (donma seviyesi)
+                zero_line = [skew_transform(0, p) for p in [1000, 100]]
+                fig.add_trace(go.Scatter(
+                    x=zero_line, y=[1000, 100],
+                    mode='lines',
+                    line=dict(color='cyan', width=2, dash='dash'),
+                    name='0°C',
+                    showlegend=False,
+                    hoverinfo='skip'
+                ))
+                
+                # Layout ayarları
                 fig.update_layout(
-                    title="🌡️ Atmosferik Profil",
+                    title=dict(
+                        text="🌡️ SkewT-logP Atmosferik Profil",
+                        font=dict(size=16, color='white'),
+                        x=0.5,
+                        xanchor='center'
+                    ),
                     template="plotly_dark",
-                    height=700, # Yüksekliği artırdım, daha dik duracak
-                    yaxis=dict(title="Basınç Seviyesi (hPa)", autorange="reversed", tickvals=[1000, 925, 850, 700, 500, 400, 300, 200], gridcolor='#444'),
-                    # X eksenini genişlettim ki çizgiler sıkışmasın
-                    xaxis=dict(title="Sıcaklık (°C)", range=[-55, 35], dtick=5, gridcolor='#444', zerolinecolor='#666'),
-                    legend=dict(x=0, y=1.02, bgcolor='rgba(0,0,0,0)'),
-                    margin=dict(l=20, r=20, t=40, b=20)
+                    height=700,
+                    yaxis=dict(
+                        title="Basınç (hPa)",
+                        type='log',
+                        range=[np.log10(1000), np.log10(100)],
+                        tickvals=[1000, 925, 850, 700, 500, 400, 300, 200, 100],
+                        ticktext=['1000', '925', '850', '700', '500', '400', '300', '200', '100'],
+                        gridcolor='rgba(100, 100, 100, 0.3)',
+                        showgrid=True
+                    ),
+                    xaxis=dict(
+                        title="Sıcaklık (°C) - Eğik Eksen",
+                        gridcolor='rgba(100, 100, 100, 0.3)',
+                        showgrid=True,
+                        zeroline=False
+                    ),
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=1.02,
+                        xanchor="center",
+                        x=0.5,
+                        bgcolor='rgba(0,0,0,0.7)',
+                        bordercolor='white',
+                        borderwidth=1
+                    ),
+                    margin=dict(l=60, r=40, t=60, b=50),
+                    hovermode='closest',
+                    plot_bgcolor='#0E1117',
+                    paper_bgcolor='#0E1117'
                 )
+                
                 st.plotly_chart(fig, use_container_width=True)
 
             # --- SAĞ: HODOGRAF ---
