@@ -117,12 +117,13 @@ with st.expander("📍 Konum ve Ayarlar", expanded=True):
     secilen_veriler = st.multiselect(
         "Veriler:",
         [
-            "Sıcaklık (850hPa)", "Sıcaklık (2m)", "Kar Yağışı (cm)", 
-            "Yağış (mm)", "Rüzgar (10m)", "Rüzgar Hamlesi", 
+            "Sıcaklık (850hPa)", "Sıcaklık (500hPa)", "Sıcaklık (2m)", 
+            "Kar Yağışı (cm)", "Kar Kalınlığı (m)",
+            "Toplam Yağış (mm)", "Rüzgar (10m)", "Rüzgar Hamlesi", 
             "Bağıl Nem (2m)", "Bulutluluk (%)", "Donma Seviyesi (m)",
             "CAPE", "Basınç"
         ],
-        default=["Sıcaklık (850hPa)", "Kar Yağışı (cm)"]
+        default=["Sıcaklık (850hPa)", "Sıcaklık (500hPa)", "Toplam Yağış (mm)"]
     )
     vurgulu_senaryolar = st.multiselect("Senaryo Vurgula", options=range(0, 31))
     st.caption(f"📅 Model Run: **{get_run_info()}**")
@@ -131,9 +132,11 @@ with st.expander("📍 Konum ve Ayarlar", expanded=True):
 def get_data(lat, lon, variables):
     var_map = {
         "Sıcaklık (850hPa)": "temperature_850hPa",
+        "Sıcaklık (500hPa)": "temperature_500hPa",
         "Sıcaklık (2m)": "temperature_2m",
         "Kar Yağışı (cm)": "snowfall",
-        "Yağış (mm)": "precipitation",
+        "Kar Kalınlığı (m)": "snow_depth",
+        "Toplam Yağış (mm)": "precipitation",
         "Rüzgar (10m)": "windspeed_10m",
         "Rüzgar Hamlesi": "windgusts_10m",
         "Bağıl Nem (2m)": "relativehumidity_2m",
@@ -189,12 +192,25 @@ if btn_calistir:
                         h_txt = [f"📅 <b>{t.strftime('%d.%m %H:%M')}</b><br>🔺 Max: {mx:.1f} (S-{mxn})<br>⚪ Ort: {mn:.1f}<br>🔻 Min: {mi:.1f} (S-{minn})" for t, mx, mxn, mn, mi, minn in zip(time, max_val, max_mem, mean_val, min_val, min_mem)]
                         fig.add_trace(go.Scatter(x=time, y=mean_val, mode='lines', line=dict(width=0), hovertemplate="%{text}<extra></extra>", text=h_txt, showlegend=False))
                         
-                        c_map = {"850hPa": "red", "2m": "orange", "Kar": "white", "Yağış": "cyan", "Rüzgar": "green", "Hamlesi": "lime", "Bulut": "gray", "Nem": "teal", "Basınç": "magenta"}
+                       
+                        c_map = {
+                            "850hPa": "red", 
+                            "500hPa": "#00BFFF", 
+                            "2m": "orange", 
+                            "Kar": "white", 
+                            "Yağış": "cyan", 
+                            "Rüzgar": "green", 
+                            "Hamlesi": "lime", 
+                            "Bulut": "gray", 
+                            "Nem": "teal", 
+                            "Basınç": "magenta"
+                        }
+                        
                         main_c = next((v for k, v in c_map.items() if k in secim), "cyan")
                         
                         fig.add_trace(go.Scatter(x=time, y=mean_val, mode='lines', line=dict(color=main_c, width=3.0), name="ORTALAMA", showlegend=False, hoverinfo='skip'))
 
-                        if "850hPa" in secim: fig.add_hline(y=0, line_dash="dash", line_color="orange", opacity=0.5)
+                        if "Sıcaklık" in secim: fig.add_hline(y=0, line_dash="dash", line_color="orange", opacity=0.5)
 
                         fig.update_layout(
                             title=dict(text=f"{location_name} - {secim}", font=dict(size=14)),
@@ -204,7 +220,7 @@ if btn_calistir:
                             legend=dict(orientation="h", y=1, x=1)
                         )
 
-                     
+                      
                         chart_config = {
                             'displayModeBar': True,
                             'displaylogo': False,
