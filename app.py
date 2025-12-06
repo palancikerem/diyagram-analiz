@@ -4,9 +4,6 @@ import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime, timezone
 import numpy as np
-from metpy.plots import SkewT
-from metpy.units import units
-import metpy.calc as mpcalc
 import matplotlib.pyplot as plt
 from io import BytesIO
 
@@ -151,101 +148,209 @@ def get_skewt_data(lat, lon):
     except:
         return None, None
 
-def create_skewt_diagram(data, pressure_levels, time_index, location_name):
-    """Profesyonel seviyede SkewT-logP diyagramı oluşturur"""
+def calculate_dewpoint(T, RH):
+    """Çiğ noktası hesaplama (Magnus formülü)"""
+    a, b = 17.27, 237.7
+    alpha = ((a * T) / (b + T)) + np.log(RH/100.0)
+    return (b * alpha) / (a - alpha)
+
+def calculate_cape_simple(pressure, temperature, dewpoint):
+    """Basitleştirilmiş CAPE hesaplama"""
+    try:
+        # Yüzey parseli
+        T_parcel = temperature[0]
+        Td_parcel = dewpoint[0]
+        
+        # Doygun adiabatik yükselme yaklaşımı
+        cape = 0
+        for i in range(len(pressure)-1):
+            if temperature[i] < T_parcel:
+                dp = pressure[i] - pressure[i+1]
+                dT = temperature[i] - T_parcel
+                cape += 9.81 * dT * dp / (temperature[i] + 273.15)
+                T_parcel -= 0.0065 * dp  # Basitleştirilmiş soğuma
+        
+        return max(0, cape)
+    except:
+        return None
+
+def create_skewt_plotly(data, pressure_levels, time_index, location_name):
+    """Plotly ile profesyonel SkewT-logP diyagramı"""
     
     hourly = data['hourly']
     time_str = pd.to_datetime(hourly['time'][time_index]).strftime('%Y-%m-%d %H:%M')
     
     # Veri hazırlama
-    p = np.array([float(lv) for lv in pressure_levels]) * units.hPa
-    T = np.array([hourly[f'temperature_{lv}hPa'][time_index] for lv in pressure_levels]) * units.degC
-    rh = np.array([hourly[f'relativehumidity_{lv}hPa'][time_index] for lv in pressure_levels]) * units.percent
+    p = np.array([float(lv) for lv in pressure_levels])
+    T = np.array([hourly[f'temperature_{lv}hPa'][time_index] for lv in pressure_levels])
+    rh = np.array([hourly[f'relativehumidity_{lv}hPa'][time_index] for lv in pressure_levels])
     
-    # Çiğ noktası hesaplama
-    Td = mpcalc.dewpoint_from_relative_humidity(T, rh)
+    # Çiğ noktası
+    Td = calculate_dewpoint(T, rh)
     
-    # Rüzgar verileri
-    wind_speed = np.array([hourly[f'windspeed_{lv}hPa'][time_index] for lv in pressure_levels]) * units('m/s')
-    wind_dir = np.array([hourly[f'winddirection_{lv}hPa'][time_index] for lv in pressure_levels]) * units.degree
+    # Rüzgar
+    wind_speed = np.array([hourly[f'windspeed_{lv}hPa'][time_index] for lv in pressure_levels])
+    wind_dir = np.array([hourly[f'winddirection_{lv}hPa'][time_index] for lv in pressure_levels])
     
-    # Rüzgar bileşenleri
-    u, v = mpcalc.wind_components(wind_speed, wind_dir)
+    # SkewT transformasyonu için
+    def skew_transform(T_val, p_val):
+        """Sıcaklığı eğik eksene dönüştür"""
+        return T_val + (np.log(1000/p_val) * 30)
     
-    # Figure oluştur
-    fig = plt.figure(figsize=(12, 10))
-    skew = SkewT(fig, rotation=45)
+    # Transform edilmiş koordinatlar
+    T_skewed = skew_transform(T, p)
+    Td_skewed = skew_transform(Td, p)
     
-    # Sıcaklık ve çiğ noktası profili
-    skew.plot(p, T, 'r-', linewidth=2.5, label='Sıcaklık')
-    skew.plot(p, Td, 'g-', linewidth=2.5, label='Çiğ Noktası')
+    fig = go.Figure()
     
-    # Kuru ve doygun adiabatlar
-    skew.plot_dry_adiabats(alpha=0.3, color='orangered', linewidth=0.8)
-    skew.plot_moist_adiabats(alpha=0.3, color='blue', linewidth=0.8)
-    skew.plot_mixing_lines(alpha=0.3, color='green', linewidth=0.8)
+    # Kuru adiabatlar (sabit potansiyel sıcaklık çizgileri)
+    for theta in range(-40, 121, 10):
+        T_line = []
+        p_line = []
+        for press in np.linspace(1000, 100, 50):
+            T_adiabat = theta * (press/1000)**0.286
+            if -60 < T_adiabat < 60:
+                T_line.append(skew_transform(T_adiabat, press))
+                p_line.append(press)
+        if T_line:
+            fig.add_trace(go.Scatter(
+                x=T_line, y=p_line,
+                mode='lines',
+                line=dict(color='rgba(255, 100, 0, 0.15)', width=0.8),
+                showlegend=False,
+                hoverinfo='skip'
+            ))
     
-    # Parsel yolu hesaplama (yüzey tabanlı)
-    try:
-        parcel_prof = mpcalc.parcel_profile(p, T[0], Td[0])
-        skew.plot(p, parcel_prof, 'k--', linewidth=2, label='Parsel Yolu', alpha=0.7)
-        
-        # CAPE ve CIN hesaplama
-        cape, cin = mpcalc.cape_cin(p, T, Td, parcel_prof)
-        
-        # LCL, LFC, EL hesaplama
-        lcl_pressure, lcl_temp = mpcalc.lcl(p[0], T[0], Td[0])
-        lfc_pressure, lfc_temp = mpcalc.lfc(p, T, Td)
-        el_pressure, el_temp = mpcalc.el(p, T, Td)
-        
-    except:
-        cape, cin = None, None
-        lcl_pressure, lfc_pressure, el_pressure = None, None, None
+    # Doygun adiabatlar yaklaşımı
+    for T_start in range(-30, 51, 10):
+        T_line = []
+        p_line = []
+        for press in np.linspace(1000, 200, 30):
+            # Basitleştirilmiş doygun adiabat
+            T_moist = T_start - (1000 - press) * 0.006
+            if -60 < T_moist < 60:
+                T_line.append(skew_transform(T_moist, press))
+                p_line.append(press)
+        if T_line:
+            fig.add_trace(go.Scatter(
+                x=T_line, y=p_line,
+                mode='lines',
+                line=dict(color='rgba(0, 100, 255, 0.15)', width=0.8),
+                showlegend=False,
+                hoverinfo='skip'
+            ))
     
-    # Rüzgar okları
-    skew.plot_barbs(p[::2], u[::2], v[::2], xloc=1.05, length=6)
+    # Karışım oranı çizgileri (izotherm benzeri)
+    for mixing in [0.5, 1, 2, 4, 8, 12, 16, 20]:
+        T_line = []
+        p_line = []
+        for press in np.linspace(1000, 400, 20):
+            # Basitleştirilmiş karışım oranı çizgisi
+            T_mix = -20 + mixing * 3 - (1000-press) * 0.01
+            if -60 < T_mix < 60:
+                T_line.append(skew_transform(T_mix, press))
+                p_line.append(press)
+        if T_line:
+            fig.add_trace(go.Scatter(
+                x=T_line, y=p_line,
+                mode='lines',
+                line=dict(color='rgba(0, 200, 0, 0.15)', width=0.8),
+                showlegend=False,
+                hoverinfo='skip'
+            ))
     
-    # Eksen ayarları
-    skew.ax.set_ylim(1000, 100)
-    skew.ax.set_xlim(-40, 50)
-    skew.ax.set_xlabel('Sıcaklık (°C)', fontsize=12, fontweight='bold')
-    skew.ax.set_ylabel('Basınç (hPa)', fontsize=12, fontweight='bold')
+    # İzotermal çizgiler (dikey)
+    for temp in range(-60, 61, 10):
+        temp_line = [skew_transform(temp, pr) for pr in [1000, 100]]
+        fig.add_trace(go.Scatter(
+            x=temp_line, y=[1000, 100],
+            mode='lines',
+            line=dict(color='rgba(150, 150, 150, 0.3)', width=0.8, dash='dot'),
+            showlegend=False,
+            hoverinfo='skip'
+        ))
     
-    # Başlık ve bilgiler
-    title_text = f'SkewT-logP Diyagramı\n{location_name} - {time_str}'
-    skew.ax.set_title(title_text, fontsize=14, fontweight='bold', pad=20)
+    # Sıcaklık profili
+    fig.add_trace(go.Scatter(
+        x=T_skewed, y=p,
+        mode='lines+markers',
+        line=dict(color='red', width=3),
+        marker=dict(size=6),
+        name='Sıcaklık',
+        hovertemplate='%{text}<extra></extra>',
+        text=[f'{pr:.0f} hPa<br>T: {t:.1f}°C' for pr, t in zip(p, T)]
+    ))
     
-    # Parametreler kutusu
-    info_text = []
+    # Çiğ noktası profili
+    fig.add_trace(go.Scatter(
+        x=Td_skewed, y=p,
+        mode='lines+markers',
+        line=dict(color='green', width=3),
+        marker=dict(size=6),
+        name='Çiğ Noktası',
+        hovertemplate='%{text}<extra></extra>',
+        text=[f'{pr:.0f} hPa<br>Td: {td:.1f}°C' for pr, td in zip(p, Td)]
+    ))
+    
+    # CAPE hesaplama
+    cape = calculate_cape_simple(p, T, Td)
+    
+    # Layout
+    fig.update_layout(
+        title=dict(
+            text=f'<b>SkewT-logP Diyagramı</b><br>{location_name} - {time_str}',
+            x=0.5,
+            xanchor='center',
+            font=dict(size=16)
+        ),
+        xaxis=dict(
+            title='Sıcaklık (°C) - Eğik Eksen',
+            gridcolor='rgba(200, 200, 200, 0.2)',
+            zeroline=True,
+            zerolinecolor='rgba(255, 255, 255, 0.3)'
+        ),
+        yaxis=dict(
+            title='Basınç (hPa)',
+            type='log',
+            range=[np.log10(1000), np.log10(100)],
+            gridcolor='rgba(200, 200, 200, 0.2)',
+            tickvals=[1000, 850, 700, 500, 300, 200, 100],
+            ticktext=['1000', '850', '700', '500', '300', '200', '100']
+        ),
+        template='plotly_dark',
+        height=700,
+        hovermode='closest',
+        showlegend=True,
+        legend=dict(
+            x=0.02,
+            y=0.98,
+            bgcolor='rgba(0,0,0,0.6)',
+            bordercolor='white',
+            borderwidth=1
+        )
+    )
+    
+    # Parametre bilgileri
+    info_text = f'<b>Atmosferik Parametreler:</b><br>'
     if cape is not None:
-        info_text.append(f'CAPE: {cape.magnitude:.0f} J/kg')
-    if cin is not None:
-        info_text.append(f'CIN: {cin.magnitude:.0f} J/kg')
-    if lcl_pressure is not None:
-        info_text.append(f'LCL: {lcl_pressure.magnitude:.0f} hPa')
-    if lfc_pressure is not None:
-        info_text.append(f'LFC: {lfc_pressure.magnitude:.0f} hPa')
-    if el_pressure is not None:
-        info_text.append(f'EL: {el_pressure.magnitude:.0f} hPa')
+        info_text += f'CAPE: {cape:.0f} J/kg<br>'
+    info_text += f'Yüzey T: {T[0]:.1f}°C<br>'
+    info_text += f'Yüzey Td: {Td[0]:.1f}°C<br>'
+    info_text += f'850 hPa T: {T[3]:.1f}°C'
     
-    if info_text:
-        skew.ax.text(0.02, 0.95, '\n'.join(info_text), 
-                     transform=skew.ax.transAxes,
-                     fontsize=10, verticalalignment='top',
-                     bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+    fig.add_annotation(
+        text=info_text,
+        xref='paper', yref='paper',
+        x=0.98, y=0.02,
+        xanchor='right', yanchor='bottom',
+        showarrow=False,
+        bgcolor='rgba(0, 0, 0, 0.7)',
+        bordercolor='white',
+        borderwidth=1,
+        font=dict(size=11, color='white')
+    )
     
-    # Legend
-    skew.ax.legend(loc='upper left', fontsize=10)
-    
-    plt.tight_layout()
-    
-    # BytesIO'ya kaydet
-    buf = BytesIO()
-    plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
-    buf.seek(0)
-    plt.close()
-    
-    return buf
+    return fig
 
 if btn_calistir:
     if not secilen_veriler:
@@ -344,13 +449,13 @@ if btn_calistir:
                         if st.button("Diyagram Oluştur", type="primary"):
                             with st.spinner('SkewT diyagramı oluşturuluyor...'):
                                 try:
-                                    img_buffer = create_skewt_diagram(
+                                    fig = create_skewt_plotly(
                                         skewt_data, 
                                         pressure_levels, 
                                         selected_time, 
                                         secilen_il
                                     )
-                                    st.image(img_buffer, use_container_width=True)
+                                    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True})
                                     st.success("✅ Diyagram başarıyla oluşturuldu!")
                                 except Exception as e:
                                     st.error(f"Diyagram oluşturulurken hata: {str(e)}")
