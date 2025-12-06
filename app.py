@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="MeteoAnaliz Pro", 
+    page_title="MeteoAnaliz Pro - GFS", 
     layout="wide", 
     initial_sidebar_state="collapsed"
 )
@@ -20,7 +20,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🌪️ MeteoAnaliz - Çoklu Model Diyagramı")
+st.title("🌪️ MeteoAnaliz - GFS Diyagramı")
 
 # --- ŞEHİR LİSTESİ ---
 TR_ILLER = {
@@ -63,27 +63,15 @@ def get_run_info():
 
 # --- ARAYÜZ KISMI ---
 with st.expander("📍 Ayarlar ve Konum", expanded=True):
-    col_a, col_b, col_c = st.columns([1.5, 1.5, 1])
+    col_a, col_b = st.columns([3, 1]) # Model seçimi gitti, 2 sütun kaldı
     
     with col_a:
         secilen_il = st.selectbox("Şehir Seç:", list(TR_ILLER.keys()), index=0)
         lat_il, lon_il = TR_ILLER[secilen_il]
     
     with col_b:
-        # MODEL SEÇİMİ
-        secilen_model_adi = st.selectbox(
-            "Hava Durumu Modeli:",
-            ["GFS (Amerikan)", "ICON (Alman)", "GEM (Kanada)"]
-        )
-        
-        # Model kodunu API için ayarla
-        if "GFS" in secilen_model_adi: model_api = "gfs_seamless"
-        elif "ICON" in secilen_model_adi: model_api = "icon_seamless"
-        elif "GEM" in secilen_model_adi: model_api = "gem_global"
-
-    with col_c:
-        st.write("")
-        st.write("")
+        st.write("") # Hizalama için boşluk
+        st.write("") 
         btn_calistir = st.button("ANALİZİ BAŞLAT", type="primary", use_container_width=True)
 
     # İkinci satır: Veriler ve Vurgulama
@@ -102,11 +90,11 @@ with st.expander("📍 Ayarlar ve Konum", expanded=True):
     with c2:
         vurgulu_senaryolar = st.multiselect("Vurgula (0=Ana):", options=range(0, 31))
 
-    st.caption(f"📅 Tahmin Zamanı: **{get_run_info()}** | Model: **{secilen_model_adi}**")
+    st.caption(f"📅 Tahmin Zamanı: **{get_run_info()}** | Model: **GFS (Amerikan)**")
 
 # --- VERİ ÇEKME FONKSİYONU ---
 @st.cache_data(ttl=3600)
-def get_data(lat, lon, variables, model):
+def get_data(lat, lon, variables):
     var_map = {
         "Sıcaklık (850hPa)": "temperature_850hPa",
         "Sıcaklık (2m)": "temperature_2m",
@@ -127,7 +115,7 @@ def get_data(lat, lon, variables, model):
     params = {
         "latitude": lat, "longitude": lon,
         "hourly": api_vars,
-        "models": model, 
+        "models": "gfs_seamless", # SABİT GFS
         "timezone": "auto"
     }
     
@@ -143,8 +131,8 @@ if btn_calistir:
     if not secilen_veriler:
         st.error("Lütfen en az bir veri seçin.")
     else:
-        with st.spinner(f'{secilen_model_adi} verisi indiriliyor...'):
-            data, mapping = get_data(lat_il, lon_il, secilen_veriler, model_api)
+        with st.spinner('GFS verisi indiriliyor...'):
+            data, mapping = get_data(lat_il, lon_il, secilen_veriler)
             
             if data:
                 hourly = data['hourly']
@@ -220,11 +208,11 @@ if btn_calistir:
 
                         # Referanslar (Sadece 0 Çizgisi Kaldı)
                         if "850hPa" in secim:
-                            # -8 Çizgisi Kaldırıldı
+                            # 0 Derece Çizgisi (Donma Noktası)
                             fig.add_hline(y=0, line_dash="dash", line_color="orange", opacity=0.5)
 
                         fig.update_layout(
-                            title=dict(text=f"{secilen_model_adi} | {secim} - {secilen_il}", font=dict(size=16)),
+                            title=dict(text=f"GFS | {secim} - {secilen_il}", font=dict(size=16)),
                             template="plotly_dark", height=380,
                             margin=dict(l=20, r=20, t=40, b=20),
                             hovermode="x unified",
