@@ -119,11 +119,11 @@ with st.expander("📍 Konum ve Ayarlar", expanded=True):
         [
             "Sıcaklık (850hPa)", "Sıcaklık (500hPa)", "Sıcaklık (2m)", 
             "Kar Yağışı (cm)", "Kar Kalınlığı (cm)", 
-            "Toplam Yağış (mm)", "Rüzgar (10m)", "Rüzgar Hamlesi", 
+            "Yağış (mm)", "Rüzgar (10m)", "Rüzgar Hamlesi", 
             "Bağıl Nem (2m)", "Bulutluluk (%)", "Donma Seviyesi (m)",
             "CAPE", "Basınç"
         ],
-        default=["Sıcaklık (850hPa)", "Sıcaklık (500hPa)", "Toplam Yağış (mm)"]
+        default=["Sıcaklık (850hPa)", "Sıcaklık (500hPa)", "Yağış (mm)"]
     )
     vurgulu_senaryolar = st.multiselect("Senaryo Vurgula", options=range(0, 31))
     st.caption(f"📅 Model Run: **{get_run_info()}**")
