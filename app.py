@@ -230,14 +230,13 @@ with tab_expert:
                 temps_np = np.array(temps)
                 dews_np = np.array(dews)
                 
-               
+                # Transform edilmiş koordinatlar
                 T_skewed = skew_transform(temps_np, press_np)
                 Td_skewed = skew_transform(dews_np, press_np)
                 
                 fig = go.Figure()
                 
-                
-                
+                # İzoterm çizgileri (gri dikey) - -50 ile +50 arası
                 for temp in range(-50, 51, 10):
                     temp_line = [skew_transform(temp, p) for p in [1000, 100]]
                     fig.add_trace(go.Scatter(
@@ -246,6 +245,7 @@ with tab_expert:
                         showlegend=False, hoverinfo='skip'
                     ))
                
+                # Sıcaklık - Çiğ noktası arası alan (yeşil gölge)
                 fill_x = list(T_skewed) + list(Td_skewed[::-1])
                 fill_y = list(press_np) + list(press_np[::-1])
                 fig.add_trace(go.Scatter(
@@ -257,7 +257,7 @@ with tab_expert:
                     hoverinfo='skip'
                 ))
                 
-              
+                # Sıcaklık profili (kırmızı) - Sadece çizgi
                 fig.add_trace(go.Scatter(
                     x=T_skewed, y=press_np,
                     mode='lines',
@@ -268,7 +268,7 @@ with tab_expert:
                     customdata=temps_np
                 ))
                 
-         
+                # Çiğ noktası profili (yeşil) - Sadece çizgi
                 fig.add_trace(go.Scatter(
                     x=Td_skewed, y=press_np,
                     mode='lines',
@@ -279,7 +279,7 @@ with tab_expert:
                     customdata=dews_np
                 ))
                 
-             
+                # 0°C çizgisi (donma seviyesi)
                 zero_line = [skew_transform(0, p) for p in [1000, 100]]
                 fig.add_trace(go.Scatter(
                     x=zero_line, y=[1000, 100],
@@ -290,10 +290,18 @@ with tab_expert:
                     hoverinfo='skip'
                 ))
                 
-          
+                # Gerçek sıcaklık verilerinden min/max bul
+                T_min = min(min(temps_np), min(dews_np))
+                T_max = max(max(temps_np), max(dews_np))
+                
+                # Skew transform edilmiş aralıkları hesapla
+                T_skewed_min = skew_transform(T_min - 5, 1000)  # 5 derece marj
+                T_skewed_max = skew_transform(T_max + 5, 100)
+                
+                # Layout ayarları
                 fig.update_layout(
                     title=dict(
-                        text=" SkewT-LogP ",
+                        text="SkewT-LogP",
                         font=dict(size=16, color='white'),
                         x=0.5,
                         xanchor='center'
@@ -305,12 +313,13 @@ with tab_expert:
                         type='log',
                         range=[np.log10(1000), np.log10(100)],
                         tickvals=[1000, 900, 850, 750, 700, 600, 500, 400, 300, 250, 200, 150, 100],
-                        ticktext=['1000','900', '850', '750','700', '600', '500', '400',  '300', '250',  '200', '150', '100'],
+                        ticktext=['1000','900', '850', '750','700', '600', '500', '400', '300', '250', '200', '150', '100'],
                         gridcolor='rgba(100, 100, 100, 0.3)',
                         showgrid=True
                     ),
                     xaxis=dict(
                         title="Sıcaklık (°C)",
+                        range=[T_skewed_min, T_skewed_max],  # Veriye göre dinamik aralık
                         gridcolor='rgba(100, 100, 100, 0.3)',
                         showgrid=True,
                         zeroline=False
