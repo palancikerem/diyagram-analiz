@@ -6,288 +6,230 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime, timezone
 
-# --- SAYFA AYARLARI (Full Genişlik) ---
-st.set_page_config(page_title="MeteoAnaliz SHARPpy", layout="wide", initial_sidebar_state="collapsed")
+# --- SAYFA AYARLARI ---
+st.set_page_config(
+    page_title="MeteoAnaliz Ultimate", 
+    layout="wide", 
+    initial_sidebar_state="collapsed"
+)
 
-# --- CSS: PRO TERMİNAL GÖRÜNÜMÜ ---
+# --- CSS (TÜM İHTİYAÇLAR İÇİN) ---
 st.markdown("""
     <style>
-        /* Genel Arka Planı Siyah Yap */
-        .stApp { background-color: #000000; color: #e0e0e0; }
-        .block-container { padding: 0.5rem 1rem; }
-        
-        /* Başlıklar */
-        h1, h2, h3 { color: #ffffff !important; font-family: 'Courier New', monospace; }
-        
-        /* Tablo Stili (SHARPpy Benzeri) */
-        .sharppy-table {
-            width: 100%;
-            background-color: #000000;
-            border: 1px solid #444;
-            color: cyan;
-            font-family: 'Courier New', monospace;
-            font-size: 0.9rem;
-            border-collapse: collapse;
-        }
-        .sharppy-table td, .sharppy-table th {
-            border: 1px solid #333;
-            padding: 4px;
-            text-align: center;
-        }
-        .header-cell { color: white; background-color: #222; font-weight: bold; }
-        .val-cell { color: #00ff00; font-weight: bold; }
-        .risk-high { color: #ff00ff !important; }
-        .risk-med { color: #ffa500 !important; }
-        
-        /* Selectbox ve Butonlar */
-        .stSelectbox > div > div { background-color: #222; color: white; border: 1px solid #444; }
-        div.stButton > button { background-color: #333; color: cyan; border: 1px solid cyan; border-radius: 0px; }
-        div.stButton > button:hover { background-color: cyan; color: black; }
+        /* Mobil uyum için kenar boşluklarını daralt */
+        .block-container { padding-top: 0.5rem; padding-bottom: 2rem; padding-left: 0.5rem; padding-right: 0.5rem; }
+        h1 { font-size: 1.6rem !important; color: #4FA5D6; text-align: center; margin-bottom: 10px; }
+        .stSelectbox, .stMultiSelect { margin-bottom: 0px; }
+        div.stButton > button { width: 100%; border-radius: 8px; font-weight: bold; }
+        /* Tab başlıklarını belirginleştir */
+        button[data-baseweb="tab"] { font-size: 1.1rem; font-weight: 600; }
+        /* Metrik kutuları */
+        div[data-testid="stMetricValue"] { font-size: 1.4rem; }
+        .stMetric { background-color: #1E1E1E; border: 1px solid #333; padding: 5px; border-radius: 5px; }
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🌪️ GFS - SHARPpy Analiz Modu")
+st.title("🌪️ MeteoAnaliz Ultimate")
 
-# --- ŞEHİRLER ---
+# --- ŞEHİR LİSTESİ ---
 TR_ILLER = {
     "İstanbul": [41.00, 28.97], "Ankara": [39.93, 32.85], "İzmir": [38.42, 27.14],
     "Adana": [37.00, 35.32], "Antalya": [36.89, 30.71], "Bursa": [40.18, 29.06],
-    "Samsun": [41.29, 36.33], "Trabzon": [41.00, 39.72], "Erzurum": [39.90, 41.27],
-    "Diyarbakır": [37.91, 40.24], "Muğla": [37.21, 28.36]
+    "Çanakkale": [40.15, 26.41], "Edirne": [41.68, 26.56], "Erzurum": [39.90, 41.27],
+    "Eskişehir": [39.78, 30.52], "Gaziantep": [37.06, 37.38], "Kayseri": [38.73, 35.49],
+    "Konya": [37.87, 32.48], "Samsun": [41.29, 36.33], "Trabzon": [41.00, 39.72],
+    "Zonguldak": [41.45, 31.79], "Muğla": [37.21, 28.36], "Van": [38.50, 43.38],
+    "Diyarbakır": [37.91, 40.24]
 }
 
-# --- KONUM VE AYARLAR ---
-with st.expander("📍 Konum ve Saat Ayarları", expanded=True):
-    c1, c2 = st.columns([3, 1])
-    with c1:
-        secilen_il = st.selectbox("İstasyon Seç:", list(TR_ILLER.keys()))
-        lat_il, lon_il = TR_ILLER[secilen_il]
-    with c2:
-        st.write("")
-        st.write("")
-        btn_calistir = st.button("ANALİZİ BAŞLAT", type="primary")
+def get_run_info():
+    now_utc = datetime.now(timezone.utc)
+    hour = now_utc.hour
+    if 3 <= hour < 9: return "00Z (Gece)"
+    elif 9 <= hour < 15: return "06Z (Sabah)"
+    elif 15 <= hour < 21: return "12Z (Öğle)"
+    else: return "18Z (Akşam)"
 
-# --- HESAPLAMA MOTORU ---
-def calculate_indices(hourly_data, idx):
-    """
-    SHARPpy tablosu için gereken meteorolojik indeksleri hesaplar.
-    """
-    def gv(param, level): return hourly_data[f"{param}_{level}hPa"][idx]
-    
-    try:
-        # Temel Değerler
-        T_sfc = hourly_data["temperature_2m"][idx]
-        Td_sfc = hourly_data["dewpoint_2m"][idx]
-        T500 = gv("temperature", 500)
-        T850 = gv("temperature", 850)
-        Td850 = gv("dewpoint", 850)
-        
-        # 1. LCL (Lifted Condensation Level) - Yaklaşık Formül
-        # LCL ≈ 125 * (T - Td)
-        lcl_h = 125 * (T_sfc - Td_sfc)
-        
-        # 2. Lifted Index (LI)
-        # Basit parsel kaldırma: T_parcel_500 ≈ T_sfc - 5 * (LCL_km) - 6.5 * (5.5 - LCL_km) ... Çok kaba
-        # Daha basit: LI = T500 - (T_sfc + 20) gibi kaba formüller yerine CAPE verisi varsa onu kullanırız.
-        # Open-Meteo'da CAPE ve LI var!
-        cape = hourly_data.get("cape", [0]*len(hourly_data["time"]))[idx]
-        li = hourly_data.get("lifted_index", [0]*len(hourly_data["time"]))[idx]
-        cin = 0 # Open-Meteo ücretsiz sürümde CIN her zaman gelmeyebiliyor
-        
-        # 3. K-Index
-        T700 = gv("temperature", 700)
-        Td700 = gv("dewpoint", 700)
-        k_idx = (T850 - T500) + Td850 - (T700 - Td700)
-        
-        # 4. Total Totals
-        tt_idx = (T850 + Td850) - (2 * T500)
-        
-        # 5. Shear (0-6km) - Basit Fark
-        # Rüzgar vektörü hesabı
-        u_sfc = -hourly_data["windspeed_10m"][idx] * np.sin(np.deg2rad(hourly_data["winddirection_10m"][idx]))
-        v_sfc = -hourly_data["windspeed_10m"][idx] * np.cos(np.deg2rad(hourly_data["winddirection_10m"][idx]))
-        
-        u_500 = -gv("windspeed", 500) * np.sin(np.deg2rad(gv("winddirection", 500)))
-        v_500 = -gv("windspeed", 500) * np.cos(np.deg2rad(gv("winddirection", 500)))
-        
-        shear_mag = np.sqrt((u_500 - u_sfc)**2 + (v_500 - v_sfc)**2) * 1.94384 # m/s to knots
-        
-        # 6. Precipitable Water (PW) - Yaklaşık (Td850'den)
-        # Tam formül karışık, basit bir gösterge kullanalım
-        pw_val = np.exp(0.07 * Td850) / 2.54 # inç cinsinden kabaca
-        
-        return {
-            "CAPE": int(cape), "CIN": int(cin), "LI": round(li, 1), "LCL": int(lcl_h),
-            "K_Index": int(k_idx), "TT": int(tt_idx), "Shear": int(shear_mag), "PW": round(pw_val, 2)
+# --- ORTAK KONUM SEÇİMİ ---
+with st.expander("📍 Konum Ayarları", expanded=True):
+    secilen_il = st.selectbox("Şehir Seçiniz:", list(TR_ILLER.keys()), index=0)
+    lat_il, lon_il = TR_ILLER[secilen_il]
+    st.caption(f"Model: **GFS (Amerikan)** | Güncelleme: **{get_run_info()}**")
+
+# --- ANA SEKMELER ---
+tab_diyagram, tab_expert = st.tabs(["📉 GFS Diyagram (Topluluk)", "🌪️ Expert Profil & Hodograf"])
+
+# ==============================================================================
+# SEKME 1: GFS ENSEMBLE DİYAGRAMI (Sadeleştirilmiş Mobil Versiyon)
+# ==============================================================================
+with tab_diyagram:
+    col_d1, col_d2 = st.columns([3, 1])
+    with col_d1:
+        secilen_veriler = st.multiselect(
+            "Veriler:",
+            ["Sıcaklık (850hPa)", "Sıcaklık (2m)", "Kar Yağışı (cm)", "Yağış (mm)", 
+             "Rüzgar (10m)", "Rüzgar Hamlesi", "Bağıl Nem (2m)", "Bulutluluk (%)", 
+             "Donma Seviyesi (m)", "CAPE", "Basınç"],
+            default=["Sıcaklık (850hPa)", "Kar Yağışı (cm)"]
+        )
+    with col_d2:
+        vurgulu_senaryolar = st.multiselect("Vurgula:", options=range(0, 31))
+
+    btn_diyagram = st.button("Diyagramı Getir", type="primary")
+
+    @st.cache_data(ttl=3600)
+    def get_ensemble_data(lat, lon, variables):
+        var_map = {
+            "Sıcaklık (850hPa)": "temperature_850hPa", "Sıcaklık (2m)": "temperature_2m",
+            "Kar Yağışı (cm)": "snowfall", "Yağış (mm)": "precipitation",
+            "Rüzgar (10m)": "windspeed_10m", "Rüzgar Hamlesi": "windgusts_10m",
+            "Bağıl Nem (2m)": "relativehumidity_2m", "Bulutluluk (%)": "cloudcover",
+            "Donma Seviyesi (m)": "freezinglevel_height", "CAPE": "cape", "Basınç": "pressure_msl"
         }
-    except:
-        return {"CAPE":0, "CIN":0, "LI":0, "LCL":0, "K_Index":0, "TT":0, "Shear":0, "PW":0}
+        api_vars = [var_map[v] for v in variables]
+        url = "https://ensemble-api.open-meteo.com/v1/ensemble"
+        params = {"latitude": lat, "longitude": lon, "hourly": api_vars, "models": "gfs_seamless", "timezone": "auto"}
+        try:
+            r = requests.get(url, params=params, timeout=15)
+            r.raise_for_status()
+            return r.json(), var_map
+        except: return None, None
 
-# --- VERİ ÇEKME ---
-@st.cache_data(ttl=3600)
-def get_sharppy_data(lat, lon):
-    levels = [1000, 975, 950, 925, 900, 850, 800, 750, 700, 650, 600, 550, 500, 450, 400, 350, 300, 250, 200, 150]
-    vars = ["temperature_2m", "dewpoint_2m", "windspeed_10m", "winddirection_10m", "cape", "lifted_index"]
-    for l in levels: vars.extend([f"temperature_{l}hPa", f"dewpoint_{l}hPa", f"windspeed_{l}hPa", f"winddirection_{l}hPa", f"geopotential_height_{l}hPa"])
+    if btn_diyagram:
+        if not secilen_veriler: st.error("Lütfen veri seçin.")
+        else:
+            with st.spinner('Diyagram verileri hazırlanıyor...'):
+                data, mapping = get_ensemble_data(lat_il, lon_il, secilen_veriler)
+                if data:
+                    hourly = data['hourly']
+                    time = pd.to_datetime(hourly['time'])
+                    for secim in secilen_veriler:
+                        api_kod = mapping[secim]
+                        fig = go.Figure()
+                        cols = [k for k in hourly.keys() if k.startswith(api_kod) and 'member' in k]
+                        if cols:
+                            df_m = pd.DataFrame(hourly)[cols]
+                            mean_val = df_m.mean(axis=1)
+                            max_val = df_m.max(axis=1)
+                            min_val = df_m.min(axis=1)
+                            max_mem = df_m.idxmax(axis=1).apply(lambda x: x.split('member')[1] if 'member' in x else '?')
+                            min_mem = df_m.idxmin(axis=1).apply(lambda x: x.split('member')[1] if 'member' in x else '?')
+                            for member in cols:
+                                try: mem_num = int(member.split('member')[1])
+                                except: mem_num = -1
+                                c, w, o, leg, h = 'lightgrey', 0.5, 0.4, False, 'skip'
+                                if mem_num in vurgulu_senaryolar:
+                                    c, w, o, leg, h = '#FF1493', 2.0, 1.0, True, 'all'
+                                fig.add_trace(go.Scatter(x=time, y=hourly[member], mode='lines', line=dict(color=c, width=w), opacity=o, name=f"S-{mem_num}", showlegend=leg, hoverinfo=h))
+                            h_txt = [f"📅 <b>{t.strftime('%d.%m %H:%M')}</b><br>🔺 Max: {mx:.1f} (S-{mxn})<br>⚪ Ort: {mn:.1f}<br>🔻 Min: {mi:.1f} (S-{minn})" for t, mx, mxn, mn, mi, minn in zip(time, max_val, max_mem, mean_val, min_val, min_mem)]
+                            fig.add_trace(go.Scatter(x=time, y=mean_val, mode='lines', line=dict(width=0), hovertemplate="%{text}<extra></extra>", text=h_txt, showlegend=False))
+                            c_map = {"850hPa": "red", "2m": "orange", "Kar": "white", "Yağış": "cyan", "Rüzgar": "green", "Hamlesi": "lime", "Bulut": "gray", "Nem": "teal", "Basınç": "magenta"}
+                            main_c = next((v for k, v in c_map.items() if k in secim), "cyan")
+                            # ORTALAMA LEJANTSIZ
+                            fig.add_trace(go.Scatter(x=time, y=mean_val, mode='lines', line=dict(color=main_c, width=3.0), name="ORTALAMA", showlegend=False, hoverinfo='skip'))
+                            if "850hPa" in secim: fig.add_hline(y=0, line_dash="dash", line_color="orange", opacity=0.5)
+                            fig.update_layout(title=dict(text=f"{secim}", font=dict(size=14)), template="plotly_dark", height=500, margin=dict(l=2, r=2, t=30, b=5), hovermode="x unified", legend=dict(orientation="h", y=1, x=1))
+                            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+
+# ==============================================================================
+# SEKME 2: EXPERT PROFIL & HODOGRAF (Düzeltilmiş Görünüm)
+# ==============================================================================
+with tab_expert:
+    btn_expert = st.button("Expert Analizi Başlat (GFS Ana Çıktı)", type="primary")
     
-    url = "https://api.open-meteo.com/v1/gfs"
-    params = {"latitude": lat, "longitude": lon, "hourly": vars, "timezone": "auto", "forecast_days": 3}
-    try:
-        r = requests.get(url, params=params, timeout=15)
-        r.raise_for_status()
-        return r.json(), levels
-    except: return None, None
+    # --- Yardımcı Fonksiyonlar ---
+    def calculate_indices(hourly_data, idx):
+        try:
+            def gv(p, l): return hourly_data[f"{p}_{l}hPa"][idx]
+            T850, Td850 = gv("temperature", 850), gv("dewpoint", 850)
+            T700, Td700 = gv("temperature", 700), gv("dewpoint", 700)
+            T500 = gv("temperature", 500)
+            k_idx = (T850 - T500) + Td850 - (T700 - Td700)
+            tt_idx = (T850 + Td850) - (2 * T500)
+            T_sfc, Td_sfc = hourly_data["temperature_2m"][idx], hourly_data["dewpoint_2m"][idx]
+            lcl_m = 125 * (T_sfc - Td_sfc)
+            return k_idx, tt_idx, lcl_m
+        except: return None, None, None
 
-# --- GRAFİK KISMI ---
-if btn_calistir or 'sharp_data' in st.session_state:
-    if btn_calistir:
-        with st.spinner("Sounding verileri işleniyor..."):
-            d, l = get_sharppy_data(lat_il, lon_il)
-            if d: st.session_state['sharp_data'], st.session_state['sharp_lvls'] = d, l
-            else: st.error("Veri yok.")
+    @st.cache_data(ttl=3600)
+    def get_expert_data(lat, lon):
+        levels = [1000, 950, 925, 900, 850, 800, 700, 600, 500, 400, 300, 250, 200]
+        vars = ["temperature_2m", "dewpoint_2m"]
+        for l in levels: vars.extend([f"temperature_{l}hPa", f"dewpoint_{l}hPa", f"windspeed_{l}hPa", f"winddirection_{l}hPa"])
+        url = "https://api.open-meteo.com/v1/gfs"
+        params = {"latitude": lat, "longitude": lon, "hourly": vars, "timezone": "auto", "forecast_days": 3}
+        try:
+            r = requests.get(url, params=params, timeout=15)
+            r.raise_for_status()
+            return r.json(), levels
+        except: return None, None
 
-    if 'sharp_data' in st.session_state:
-        data = st.session_state['sharp_data']
-        levels = st.session_state['sharp_lvls']
-        hourly = data['hourly']
-        time = pd.to_datetime(hourly['time'])
-
-        # SAAT SEÇİMİ
-        col_t1, col_t2 = st.columns([1, 4])
-        with col_t1:
-            sel_time = st.selectbox("Saat:", [t.strftime('%d %b %H:%M') for t in time], index=0)
-            idx = [t.strftime('%d %b %H:%M') for t in time].index(sel_time)
-
-        # Veri Hazırlığı
-        stats = calculate_indices(hourly, idx)
-        temps, dews, press, u, v, spd = [], [], [], [], [], []
+    if btn_expert or 'ex_data' in st.session_state:
+        if btn_expert:
+            with st.spinner("Atmosferik katmanlar taranıyor..."):
+                d, l = get_expert_data(lat_il, lon_il)
+                if d: st.session_state['ex_data'], st.session_state['ex_lvls'] = d, l
+                else: st.error("Veri alınamadı.")
         
-        for lvl in levels:
-            try:
-                temps.append(hourly[f"temperature_{lvl}hPa"][idx])
-                dews.append(hourly[f"dewpoint_{lvl}hPa"][idx])
-                press.append(lvl)
-                wd = hourly[f"winddirection_{lvl}hPa"][idx]
-                ws = hourly[f"windspeed_{lvl}hPa"][idx] * 0.539957 # km/h to knots
-                spd.append(ws)
-                rad = np.deg2rad(wd)
-                u.append(-ws * np.sin(rad))
-                v.append(-ws * np.cos(rad))
-            except: pass
+        if 'ex_data' in st.session_state:
+            data, levels = st.session_state['ex_data'], st.session_state['ex_lvls']
+            hourly = data['hourly']
+            time = pd.to_datetime(hourly['time'])
 
-        # --- DÜZEN: SOL (SKEW-T), SAĞ (HODOGRAF) ---
-        col_main, col_hodo = st.columns([2, 1])
-
-        # 1. SKEW-T (SOL)
-        with col_main:
-            fig = make_subplots(rows=1, cols=2, shared_yaxes=True, column_widths=[0.85, 0.15], horizontal_spacing=0.01)
+            st.markdown("---")
+            c_time, c_info = st.columns([2, 3])
+            with c_time:
+                sel_time = st.select_slider("📅 Analiz Saati:", options=[t.strftime('%d %b %H:%M') for t in time], value=time[0].strftime('%d %b %H:%M'))
+                idx = [t.strftime('%d %b %H:%M') for t in time].index(sel_time)
             
-            # Arka Plan Çizgileri (Skew-T Grid Taklidi)
-            # Plotly'de gerçek skew zor, ama görsel hile ile grid ekleyebiliriz
-            # Şimdilik temiz siyah ekran üzerine veriyi basalım
-            
-            # Sıcaklık (Kırmızı)
-            fig.add_trace(go.Scatter(x=temps, y=press, mode='lines', name='Temp', line=dict(color='#FF0000', width=3)), row=1, col=1)
-            # Dewpoint (Yeşil)
-            fig.add_trace(go.Scatter(x=dews, y=press, mode='lines', name='Dewpoint', line=dict(color='#00FF00', width=3)), row=1, col=1)
-            
-            # Parsel Yolu Taklidi (Beyaz Kesik Çizgi - LCL'den yukarı)
-            # Basitçe yüzey sıcaklığından paralel çizelim görsel olsun diye
-            parcel_line_x = [hourly["temperature_2m"][idx], -60]
-            parcel_line_y = [1000, 200]
-            fig.add_trace(go.Scatter(x=parcel_line_x, y=parcel_line_y, mode='lines', line=dict(color='white', width=2, dash='dash'), name='Parcel', opacity=0.5), row=1, col=1)
+            k, tt, lcl = calculate_indices(hourly, idx)
+            with c_info:
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric("Sıcaklık (2m)", f"{hourly['temperature_2m'][idx]}°C")
+                k_d = "Yüksek Risk!" if k > 30 else ("Orta Risk" if k > 20 else "Düşük")
+                m2.metric("K-Index", f"{k:.1f}", k_d)
+                tt_d = "Şiddetli!" if tt > 50 else ("Olası" if tt > 44 else "Sakin")
+                m3.metric("Total Totals", f"{tt:.1f}", tt_d)
+                m4.metric("LCL (Bulut)", f"{int(lcl) if lcl else '?'}m")
 
-            # Rüzgar Bar (Sağ Yan)
-            fig.add_trace(go.Bar(x=spd, y=press, orientation='h', marker=dict(color='cyan'), showlegend=False), row=1, col=2)
+            temps, dews, press, u_w, v_w = [], [], [], [], []
+            for l in levels:
+                try:
+                    t, d = hourly[f"temperature_{l}hPa"][idx], hourly[f"dewpoint_{l}hPa"][idx]
+                    w, wd = hourly[f"windspeed_{l}hPa"][idx], hourly[f"winddirection_{l}hPa"][idx]
+                    temps.append(t); dews.append(d); press.append(l)
+                    rad = np.deg2rad(wd)
+                    u_w.append(-w * np.sin(rad)); v_w.append(-w * np.cos(rad))
+                except: pass
 
-            fig.update_layout(
-                plot_bgcolor='black', paper_bgcolor='black',
-                height=650,
-                xaxis=dict(title="Temperature (C)", range=[-40, 40], dtick=10, gridcolor='#333', zeroline=False, tickfont=dict(color='white')),
-                yaxis=dict(title="Pressure (hPa)", range=[1050, 100], tickvals=[1000, 850, 700, 500, 300, 200], gridcolor='#444', tickfont=dict(color='white')),
-                xaxis2=dict(title="Knots", gridcolor='#333', tickfont=dict(color='white'), range=[0, 100]),
-                showlegend=False,
-                margin=dict(l=40, r=10, t=10, b=10)
-            )
-            st.plotly_chart(fig, use_container_width=True)
+            col_skew, col_hodo = st.columns([3, 2]) # Sol tarafı daha geniş tuttum
 
-        # 2. HODOGRAF (SAĞ)
-        with col_hodo:
-            fig_h = go.Figure()
-            
-            # Izgaralar (Radar Görünümü)
-            for r in [20, 40, 60, 80]:
-                fig_h.add_shape(type="circle", xref="x", yref="y", x0=-r, y0=-r, x1=r, y1=r, line_color="#444", opacity=0.8)
-            fig_h.add_vline(x=0, line_color="#444"); fig_h.add_hline(y=0, line_color="#444")
+            # --- SOL: PROFİL (DÜZELTİLMİŞ GÖRÜNÜM) ---
+            with col_skew:
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(x=temps, y=press, mode='lines+markers', name='Sıcaklık', line=dict(color='red', width=3)))
+                fig.add_trace(go.Scatter(x=dews, y=press, mode='lines+markers', name='Dewpoint', line=dict(color='#00FF00', width=2)))
+                fig.add_trace(go.Scatter(x=temps + dews[::-1], y=press + press[::-1], fill='toself', fillcolor='rgba(0, 255, 0, 0.1)', line=dict(color='rgba(0,0,0,0)'), showlegend=False, hoverinfo='skip'))
+                fig.add_vline(x=0, line_color="cyan", line_width=1, opacity=0.7, annotation_text="0°C")
+                
+                # İşte "Basık" Görünümü Düzelten Ayarlar:
+                fig.update_layout(
+                    title="🌡️ Atmosferik Profil",
+                    template="plotly_dark",
+                    height=700, # Yüksekliği artırdım, daha dik duracak
+                    yaxis=dict(title="Basınç Seviyesi (hPa)", autorange="reversed", tickvals=[1000, 925, 850, 700, 500, 400, 300, 200], gridcolor='#444'),
+                    # X eksenini genişlettim ki çizgiler sıkışmasın
+                    xaxis=dict(title="Sıcaklık (°C)", range=[-55, 35], dtick=5, gridcolor='#444', zerolinecolor='#666'),
+                    legend=dict(x=0, y=1.02, bgcolor='rgba(0,0,0,0)'),
+                    margin=dict(l=20, r=20, t=40, b=20)
+                )
+                st.plotly_chart(fig, use_container_width=True)
 
-            # Renkli Trace (0-3km Kırmızı, 3-6km Yeşil, 6+ Sarı gibi)
-            # Veriyi bölmemiz lazım ama basitlik için tek çizgi renkli marker yapalım
-            fig_h.add_trace(go.Scatter(
-                x=u, y=v, mode='lines+markers',
-                line=dict(color='cyan', width=2),
-                marker=dict(size=6, color=press, colorscale='Turbo', showscale=False), # Basınca göre renk
-                name='Wind Vector'
-            ))
-
-            fig_h.update_layout(
-                title=dict(text="HODOGRAPH (kts)", font=dict(color='white', family='Courier New')),
-                plot_bgcolor='black', paper_bgcolor='black',
-                height=400, width=400,
-                xaxis=dict(range=[-80, 80], showgrid=False, zeroline=False, tickfont=dict(color='white')),
-                yaxis=dict(range=[-80, 80], showgrid=False, zeroline=False, tickfont=dict(color='white'), scaleanchor="x", scaleratio=1),
-                margin=dict(l=10, r=10, t=40, b=10)
-            )
-            st.plotly_chart(fig_h, use_container_width=True)
-            
-            # Storm Slinky / Hazard Type Tahmini (Basit Mantık)
-            haz_type = "NONE"
-            haz_color = "#00ff00"
-            if stats["CAPE"] > 1000 and stats["Shear"] > 40:
-                haz_type = "SUPERCELL"
-                haz_color = "#ff00ff"
-            elif stats["CAPE"] > 500 and stats["Shear"] > 30:
-                haz_type = "MARGINAL"
-                haz_color = "yellow"
-            
-            st.markdown(f"""
-            <div style="background-color:black; border:2px solid {haz_color}; text-align:center; padding:10px;">
-                <h3 style="color:white; margin:0;">Psbl Haz. Type</h3>
-                <h1 style="color:{haz_color}; margin:0;">{haz_type}</h1>
-            </div>
-            """, unsafe_allow_html=True)
-
-        # 3. ALT TABLO (SHARPpy Benzeri HTML)
-        # Attığın görseldeki alt kısımdaki tabloyu HTML ile çiziyoruz
-        
-        st.markdown(f"""
-        <table class="sharppy-table">
-            <tr>
-                <td class="header-cell">PCL</td>
-                <td class="header-cell">CAPE</td>
-                <td class="header-cell">CINH</td>
-                <td class="header-cell">LCL</td>
-                <td class="header-cell">LI</td>
-                <td class="header-cell">K-Idx</td>
-                <td class="header-cell">TT</td>
-                <td class="header-cell">Shear(kt)</td>
-                <td class="header-cell">PW(in)</td>
-            </tr>
-            <tr>
-                <td>SFC</td>
-                <td class="val-cell" style="color:{'red' if stats['CAPE']>1000 else 'cyan'}">{stats['CAPE']}</td>
-                <td class="val-cell">{stats['CIN']}</td>
-                <td class="val-cell">{stats['LCL']}m</td>
-                <td class="val-cell">{stats['LI']}</td>
-                <td class="val-cell">{stats['K_Index']}</td>
-                <td class="val-cell">{stats['TT']}</td>
-                <td class="val-cell" style="color:{'magenta' if stats['Shear']>40 else 'cyan'}">{stats['Shear']}</td>
-                <td class="val-cell">{stats['PW']}</td>
-            </tr>
-        </table>
-        <br>
-        <div style="display:flex; justify-content:space-between; background-color:black; border:1px solid #333; padding:5px; color:white; font-family:'Courier New'; font-size:0.8rem;">
-            <div>Storm Motion: <span style="color:cyan">Bunkers Right 203/27 kt</span></div>
-            <div>0-1km SRH: <span style="color:orange">--</span></div>
-            <div>0-3km SRH: <span style="color:red">--</span></div>
-        </div>
-        """, unsafe_allow_html=True)
+            # --- SAĞ: HODOGRAF ---
+            with col_hodo:
+                fig_h = go.Figure()
+                fig_h.add_trace(go.Scatter(x=u_w, y=v_w, mode='lines+markers+text', text=[str(p) if p in [1000, 850, 700, 500, 300] else "" for p in press], textposition="top right", marker=dict(size=8, color=press, colorscale='Jet_r', showscale=True, colorbar=dict(title="hPa", len=0.5, yanchor="top", y=1, xanchor="left", x=1.05)), line=dict(color='white', width=2), name="Rüzgar Vektörü"))
+                fig_h.add_trace(go.Scatter(x=[0], y=[0], mode='markers', marker=dict(color='white', symbol='cross', size=10), showlegend=False))
+                for r in [20, 40, 60]: fig_h.add_shape(type="circle", xref="x", yref="y", x0=-r, y0=-r, x1=r, y1=r, line_color="gray", opacity=0.3)
+                fig_h.update_layout(title="🌀 Hodograf", template="plotly_dark", height=500, width=500, xaxis=dict(title="U (Doğu-Batı)", range=[-70, 70], zeroline=True), yaxis=dict(title="V (Kuzey-Güney)", range=[-70, 70], zeroline=True, scaleanchor="x", scaleratio=1), margin=dict(l=10, r=10, t=40, b=10), showlegend=False)
+                st.plotly_chart(fig_h, use_container_width=True)
