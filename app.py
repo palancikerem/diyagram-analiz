@@ -8,12 +8,12 @@ from datetime import datetime, timezone
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="MeteoAnaliz Ultimate", 
+    page_title="GFS - KeremPalancı", 
     layout="wide", 
     initial_sidebar_state="collapsed"
 )
 
-# --- CSS (TÜM İHTİYAÇLAR İÇİN) ---
+
 st.markdown("""
     <style>
         /* Mobil uyum için kenar boşluklarını daralt */
@@ -29,17 +29,37 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🌪️ MeteoAnaliz Ultimate")
+st.title("By KeremPalancı")
 
-# --- ŞEHİR LİSTESİ ---
+
 TR_ILLER = {
     "İstanbul": [41.00, 28.97], "Ankara": [39.93, 32.85], "İzmir": [38.42, 27.14],
-    "Adana": [37.00, 35.32], "Antalya": [36.89, 30.71], "Bursa": [40.18, 29.06],
-    "Çanakkale": [40.15, 26.41], "Edirne": [41.68, 26.56], "Erzurum": [39.90, 41.27],
-    "Eskişehir": [39.78, 30.52], "Gaziantep": [37.06, 37.38], "Kayseri": [38.73, 35.49],
-    "Konya": [37.87, 32.48], "Samsun": [41.29, 36.33], "Trabzon": [41.00, 39.72],
-    "Zonguldak": [41.45, 31.79], "Muğla": [37.21, 28.36], "Van": [38.50, 43.38],
-    "Diyarbakır": [37.91, 40.24]
+    "Adana": [37.00, 35.32], "Adıyaman": [37.76, 38.28], "Afyonkarahisar": [38.75, 30.54],
+    "Ağrı": [39.72, 43.05], "Aksaray": [38.37, 34.03], "Amasya": [40.65, 35.83],
+    "Antalya": [36.89, 30.71], "Ardahan": [41.11, 42.70], "Artvin": [41.18, 41.82],
+    "Aydın": [37.84, 27.84], "Balıkesir": [39.65, 27.88], "Bartın": [41.63, 32.34],
+    "Batman": [37.88, 41.13], "Bayburt": [40.26, 40.22], "Bilecik": [40.14, 29.98],
+    "Bingöl": [38.88, 40.49], "Bitlis": [38.40, 42.10], "Bolu": [40.73, 31.61],
+    "Burdur": [37.72, 30.29], "Bursa": [40.18, 29.06], "Çanakkale": [40.15, 26.41],
+    "Çankırı": [40.60, 33.61], "Çorum": [40.55, 34.95], "Denizli": [37.77, 29.09],
+    "Diyarbakır": [37.91, 40.24], "Düzce": [40.84, 31.16], "Edirne": [41.68, 26.56],
+    "Elazığ": [38.68, 39.22], "Erzincan": [39.75, 39.50], "Erzurum": [39.90, 41.27],
+    "Eskişehir": [39.78, 30.52], "Gaziantep": [37.06, 37.38], "Giresun": [40.91, 38.39],
+    "Gümüşhane": [40.46, 39.48], "Hakkari": [37.58, 43.74], "Hatay": [36.40, 36.34],
+    "Iğdır": [39.92, 44.04], "Isparta": [37.76, 30.56], "Kahramanmaraş": [37.58, 36.93],
+    "Karabük": [41.20, 32.62], "Karaman": [37.18, 33.22], "Kars": [40.60, 43.10],
+    "Kastamonu": [41.38, 33.78], "Kayseri": [38.73, 35.49], "Kırıkkale": [39.85, 33.51],
+    "Kırklareli": [41.73, 27.22], "Kırşehir": [39.15, 34.17], "Kilis": [36.71, 37.11],
+    "Kocaeli": [40.85, 29.88], "Konya": [37.87, 32.48], "Kütahya": [39.42, 29.98],
+    "Malatya": [38.35, 38.31], "Manisa": [38.61, 27.43], "Mardin": [37.32, 40.74],
+    "Mersin": [36.80, 34.64], "Muğla": [37.21, 28.36], "Muş": [38.74, 41.49],
+    "Nevşehir": [38.62, 34.71], "Niğde": [37.97, 34.68], "Ordu": [40.98, 37.88],
+    "Osmaniye": [37.07, 36.25], "Rize": [41.02, 40.52], "Sakarya": [40.77, 30.40],
+    "Samsun": [41.29, 36.33], "Siirt": [37.93, 41.94], "Sinop": [42.03, 35.15],
+    "Sivas": [39.75, 37.02], "Şanlıurfa": [37.16, 38.79], "Şırnak": [37.52, 42.46],
+    "Tekirdağ": [40.98, 27.51], "Tokat": [40.31, 36.55], "Trabzon": [41.00, 39.72],
+    "Tunceli": [39.11, 39.55], "Uşak": [38.68, 29.41], "Van": [38.50, 43.38],
+    "Yalova": [40.65, 29.27], "Yozgat": [39.82, 34.81], "Zonguldak": [41.45, 31.79]
 }
 
 def get_run_info():
@@ -50,18 +70,16 @@ def get_run_info():
     elif 15 <= hour < 21: return "12Z (Öğle)"
     else: return "18Z (Akşam)"
 
-# --- ORTAK KONUM SEÇİMİ ---
+
 with st.expander("📍 Konum Ayarları", expanded=True):
     secilen_il = st.selectbox("Şehir Seçiniz:", list(TR_ILLER.keys()), index=0)
     lat_il, lon_il = TR_ILLER[secilen_il]
     st.caption(f"Model: **GFS (Amerikan)** | Güncelleme: **{get_run_info()}**")
 
-# --- ANA SEKMELER ---
+
 tab_diyagram, tab_expert = st.tabs(["📉 GFS Diyagram (Topluluk)", "🌪️ Expert Profil & Hodograf"])
 
-# ==============================================================================
-# SEKME 1: GFS ENSEMBLE DİYAGRAMI (Sadeleştirilmiş Mobil Versiyon)
-# ==============================================================================
+
 with tab_diyagram:
     col_d1, col_d2 = st.columns([3, 1])
     with col_d1:
@@ -125,19 +143,17 @@ with tab_diyagram:
                             fig.add_trace(go.Scatter(x=time, y=mean_val, mode='lines', line=dict(width=0), hovertemplate="%{text}<extra></extra>", text=h_txt, showlegend=False))
                             c_map = {"850hPa": "red", "2m": "orange", "Kar": "white", "Yağış": "cyan", "Rüzgar": "green", "Hamlesi": "lime", "Bulut": "gray", "Nem": "teal", "Basınç": "magenta"}
                             main_c = next((v for k, v in c_map.items() if k in secim), "cyan")
-                            # ORTALAMA LEJANTSIZ
+                            
                             fig.add_trace(go.Scatter(x=time, y=mean_val, mode='lines', line=dict(color=main_c, width=3.0), name="ORTALAMA", showlegend=False, hoverinfo='skip'))
                             if "850hPa" in secim: fig.add_hline(y=0, line_dash="dash", line_color="orange", opacity=0.5)
                             fig.update_layout(title=dict(text=f"{secim}", font=dict(size=14)), template="plotly_dark", height=500, margin=dict(l=2, r=2, t=30, b=5), hovermode="x unified", legend=dict(orientation="h", y=1, x=1))
                             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-# ==============================================================================
-# SEKME 2: EXPERT PROFIL & HODOGRAF (GÜZELLEŞTİRİLMİŞ SKEWT)
-# ==============================================================================
+
 with tab_expert:
     btn_expert = st.button("Expert Analizi Başlat (GFS Ana Çıktı)", type="primary")
     
-    # --- Yardımcı Fonksiyonlar ---
+ 
     def calculate_indices(hourly_data, idx):
         try:
             def gv(p, l): return hourly_data[f"{p}_{l}hPa"][idx]
@@ -204,7 +220,7 @@ with tab_expert:
 
             col_skew, col_hodo = st.columns([3, 2])
 
-            # --- SOL: PROFESYONEL SKEWT DİYAGRAMI ---
+          
             with col_skew:
                 def skew_transform(T_val, p_val):
                     """Sıcaklığı eğik eksene dönüştür (SkewT transformasyonu)"""
@@ -214,58 +230,14 @@ with tab_expert:
                 temps_np = np.array(temps)
                 dews_np = np.array(dews)
                 
-                # Transform edilmiş koordinatlar
+               
                 T_skewed = skew_transform(temps_np, press_np)
                 Td_skewed = skew_transform(dews_np, press_np)
                 
                 fig = go.Figure()
                 
-                # Kuru adiabatlar (turuncu)
-                for theta in range(-40, 121, 10):
-                    T_line, p_line = [], []
-                    for p in np.linspace(1000, 100, 40):
-                        T_adiabat = theta * (p/1000)**0.286
-                        if -70 < T_adiabat < 50:
-                            T_line.append(skew_transform(T_adiabat, p))
-                            p_line.append(p)
-                    if T_line:
-                        fig.add_trace(go.Scatter(
-                            x=T_line, y=p_line, mode='lines',
-                            line=dict(color='rgba(255, 120, 0, 0.2)', width=1),
-                            showlegend=False, hoverinfo='skip'
-                        ))
                 
-                # Doygun adiabatlar (mavi)
-                for T_start in range(-30, 51, 10):
-                    T_line, p_line = [], []
-                    for p in np.linspace(1000, 200, 30):
-                        T_moist = T_start - (1000 - p) * 0.006
-                        if -70 < T_moist < 50:
-                            T_line.append(skew_transform(T_moist, p))
-                            p_line.append(p)
-                    if T_line:
-                        fig.add_trace(go.Scatter(
-                            x=T_line, y=p_line, mode='lines',
-                            line=dict(color='rgba(0, 150, 255, 0.2)', width=1),
-                            showlegend=False, hoverinfo='skip'
-                        ))
                 
-                # Karışım oranı çizgileri (yeşil)
-                for mixing in [1, 2, 4, 8, 12, 16, 20]:
-                    T_line, p_line = [], []
-                    for p in np.linspace(1000, 400, 20):
-                        T_mix = -20 + mixing * 3 - (1000-p) * 0.01
-                        if -70 < T_mix < 50:
-                            T_line.append(skew_transform(T_mix, p))
-                            p_line.append(p)
-                    if T_line:
-                        fig.add_trace(go.Scatter(
-                            x=T_line, y=p_line, mode='lines',
-                            line=dict(color='rgba(50, 200, 50, 0.2)', width=1),
-                            showlegend=False, hoverinfo='skip'
-                        ))
-                
-                # İzoterm çizgileri (gri dikey) - -50 ile +50 arası
                 for temp in range(-50, 51, 10):
                     temp_line = [skew_transform(temp, p) for p in [1000, 100]]
                     fig.add_trace(go.Scatter(
@@ -273,8 +245,7 @@ with tab_expert:
                         line=dict(color='rgba(150, 150, 150, 0.3)', width=0.8, dash='dot'),
                         showlegend=False, hoverinfo='skip'
                     ))
-                
-                # Sıcaklık - Çiğ noktası arası alan (yeşil gölge)
+               
                 fill_x = list(T_skewed) + list(Td_skewed[::-1])
                 fill_y = list(press_np) + list(press_np[::-1])
                 fig.add_trace(go.Scatter(
@@ -286,7 +257,7 @@ with tab_expert:
                     hoverinfo='skip'
                 ))
                 
-                # Sıcaklık profili (kırmızı) - Sadece çizgi, marker yok
+              
                 fig.add_trace(go.Scatter(
                     x=T_skewed, y=press_np,
                     mode='lines',
@@ -297,7 +268,7 @@ with tab_expert:
                     customdata=temps_np
                 ))
                 
-                # Çiğ noktası profili (yeşil) - Sadece çizgi, marker yok
+         
                 fig.add_trace(go.Scatter(
                     x=Td_skewed, y=press_np,
                     mode='lines',
@@ -308,21 +279,21 @@ with tab_expert:
                     customdata=dews_np
                 ))
                 
-                # 0°C çizgisi (donma seviyesi)
+             
                 zero_line = [skew_transform(0, p) for p in [1000, 100]]
                 fig.add_trace(go.Scatter(
                     x=zero_line, y=[1000, 100],
                     mode='lines',
-                    line=dict(color='cyan', width=2, dash='dash'),
+                    line=dict(color='blue', width=1, dash='dash'),
                     name='0°C',
                     showlegend=False,
                     hoverinfo='skip'
                 ))
                 
-                # Layout ayarları
+          
                 fig.update_layout(
                     title=dict(
-                        text="🌡️ SkewT-logP Atmosferik Profil",
+                        text=" SkewT-LogP ",
                         font=dict(size=16, color='white'),
                         x=0.5,
                         xanchor='center'
@@ -339,7 +310,7 @@ with tab_expert:
                         showgrid=True
                     ),
                     xaxis=dict(
-                        title="Sıcaklık (°C) - Eğik Eksen",
+                        title="Sıcaklık (°C)",
                         gridcolor='rgba(100, 100, 100, 0.3)',
                         showgrid=True,
                         zeroline=False
@@ -362,10 +333,10 @@ with tab_expert:
                 
                 st.plotly_chart(fig, use_container_width=True)
 
-            # --- SAĞ: HODOGRAF ---
+ 
             with col_hodo:
                 fig_h = go.Figure()
-                # Rüzgar çizgisi - Sadece çizgi, marker yok
+                
                 fig_h.add_trace(go.Scatter(
                     x=u_w, y=v_w, 
                     mode='lines+text', 
