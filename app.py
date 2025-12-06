@@ -12,18 +12,16 @@ st.set_page_config(
 
 st.markdown("""
     <style>
-        /* Kenar boşluklarını sıfırla */
         .block-container { padding-top: 0.5rem; padding-bottom: 1rem; padding-left: 0.2rem; padding-right: 0.2rem; }
         h1 { font-size: 1.3rem !important; color: #4FA5D6; text-align: center; margin-bottom: 0px; }
-        /* Buton ve kutuları sıkılaştır */
-        .stSelectbox, .stMultiSelect { margin-bottom: 0px; }
+        .stSelectbox, .stMultiSelect, .stTextInput { margin-bottom: 0px; }
         div.stButton > button { width: 100%; border-radius: 8px; }
-        /* Plotly grafiği tam otursun */
         .main-svg { border-radius: 8px; }
     </style>
 """, unsafe_allow_html=True)
 
 st.title("Meteorolojik Diyagramlar - KeremPalancı")
+
 
 TR_ILLER = {
     "İstanbul": [41.00, 28.97], "Ankara": [39.93, 32.85], "İzmir": [38.42, 27.14],
@@ -63,15 +61,58 @@ def get_run_info():
     elif 15 <= hour < 21: return "12Z (Öğle)"
     else: return "18Z (Akşam)"
 
-with st.expander("📍 Ayarlar", expanded=True):
-    col_a, col_b = st.columns([3, 1])
-    with col_a:
-        secilen_il = st.selectbox("Şehir:", list(TR_ILLER.keys()), index=0)
-        lat_il, lon_il = TR_ILLER[secilen_il]
-    with col_b:
-        st.write("")
-        st.write("") 
-        btn_calistir = st.button("Başlat", type="primary", use_container_width=True)
+
+@st.cache_data
+def search_location(query):
+    url = "https://geocoding-api.open-meteo.com/v1/search"
+    params = {"name": query, "count": 5, "language": "tr", "format": "json"}
+    try:
+        r = requests.get(url, params=params, timeout=5)
+        r.raise_for_status()
+        data = r.json()
+        if "results" in data:
+            return data["results"]
+        return []
+    except:
+        return []
+
+
+with st.expander("📍 Konum ve Ayarlar", expanded=True):
+    tab1, tab2 = st.tabs(["Listeden Seç", "🔍 Konum Ara (Tüm İlçeler)"])
+    
+    selected_lat, selected_lon, location_name = 41.00, 28.97, "İstanbul"
+
+    with tab1:
+        secilen_il = st.selectbox("Şehir Seçiniz:", list(TR_ILLER.keys()), index=0)
+        if secilen_il:
+            selected_lat, selected_lon = TR_ILLER[secilen_il]
+            location_name = secilen_il
+
+    with tab2:
+        col_search, col_res = st.columns([2, 2])
+        with col_search:
+            arama_sorgusu = st.text_input("İlçe/Konum Yaz (Örn: Alanya)", placeholder="İlçe adı girin...")
+        
+        with col_res:
+            if arama_sorgusu:
+                sonuclar = search_location(arama_sorgusu)
+                if sonuclar:
+                    secenekler = {f"{s['name']} ({s.get('admin1', '')}, {s.get('country_code', '')})": (s['latitude'], s['longitude'], s['name']) for s in sonuclar}
+                    secilen_sonuc = st.selectbox("Sonuç Seç:", list(secenekler.keys()))
+                    if secilen_sonuc:
+                        selected_lat, selected_lon, location_name = secenekler[secilen_sonuc]
+                else:
+                    st.warning("Bulunamadı.")
+            else:
+                st.info("Aramak için yazın.")
+
+    st.divider()
+    
+    col_run_btn, col_info = st.columns([1, 3])
+    with col_run_btn:
+        btn_calistir = st.button("Analizi Başlat", type="primary", use_container_width=True)
+    with col_info:
+        st.caption(f"Seçili Konum: **{location_name}** ({selected_lat:.2f}, {selected_lon:.2f})")
 
     secilen_veriler = st.multiselect(
         "Veriler:",
@@ -83,8 +124,8 @@ with st.expander("📍 Ayarlar", expanded=True):
         ],
         default=["Sıcaklık (850hPa)", "Kar Yağışı (cm)"]
     )
-    vurgulu_senaryolar = st.multiselect("Senaryo Seç", options=range(0, 31))
-    st.caption(f"📅 Model: **{get_run_info()}**")
+    vurgulu_senaryolar = st.multiselect("Senaryo Vurgula", options=range(0, 31))
+    st.caption(f"📅 Model Run: **{get_run_info()}**")
 
 @st.cache_data(ttl=3600)
 def get_data(lat, lon, variables):
@@ -111,10 +152,10 @@ def get_data(lat, lon, variables):
     except: return None, None
 
 if btn_calistir:
-    if not secilen_veriler: st.error("Veri seçin.")
+    if not secilen_veriler: st.error("Lütfen en az bir veri seçin.")
     else:
-        with st.spinner('Veri alınıyor...'):
-            data, mapping = get_data(lat_il, lon_il, secilen_veriler)
+        with st.spinner(f'{location_name} için veri çekiliyor...'):
+            data, mapping = get_data(selected_lat, selected_lon, secilen_veriler)
             if data:
                 hourly = data['hourly']
                 time = pd.to_datetime(hourly['time'])
@@ -156,24 +197,22 @@ if btn_calistir:
                         if "850hPa" in secim: fig.add_hline(y=0, line_dash="dash", line_color="orange", opacity=0.5)
 
                         fig.update_layout(
-                            title=dict(text=f"{secilen_il} - {secim}", font=dict(size=14)),
+                            title=dict(text=f"{location_name} - {secim}", font=dict(size=14)),
                             template="plotly_dark", height=500,
                             margin=dict(l=2, r=2, t=30, b=5), 
                             hovermode="x unified",
                             legend=dict(orientation="h", y=1, x=1)
                         )
-                        
-                        
+
+                     
                         chart_config = {
-                            'displayModeBar': True, 
-                            'displaylogo': False,   
-                            'modeBarButtonsToRemove': ['lasso2d', 'select2d'], 
+                            'displayModeBar': True,
+                            'displaylogo': False,
+                            'modeBarButtonsToRemove': ['lasso2d', 'select2d'],
                             'toImageButtonOptions': {
-                                'format': 'png', 
-                                'filename': f'GFS_{secilen_il}_{secim}', 
-                                'height': 800,
-                                'width': 1200,
-                                'scale': 2 
+                                'format': 'png',
+                                'filename': f'GFS_{location_name}_{secim}',
+                                'height': 800, 'width': 1200, 'scale': 2
                             }
                         }
                         
