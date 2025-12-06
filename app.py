@@ -4,13 +4,11 @@ import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime, timezone
 
-
 st.set_page_config(
     page_title="GFS - KeremPalancı", 
     layout="wide", 
     initial_sidebar_state="collapsed"
 )
-
 
 st.markdown("""
     <style>
@@ -26,7 +24,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("Meteorolojik Diyagramlar - KeremPalancı")
-
 
 TR_ILLER = {
     "İstanbul": [41.00, 28.97], "Ankara": [39.93, 32.85], "İzmir": [38.42, 27.14],
@@ -66,7 +63,6 @@ def get_run_info():
     elif 15 <= hour < 21: return "12Z (Öğle)"
     else: return "18Z (Akşam)"
 
-
 with st.expander("📍 Ayarlar", expanded=True):
     col_a, col_b = st.columns([3, 1])
     with col_a:
@@ -89,7 +85,6 @@ with st.expander("📍 Ayarlar", expanded=True):
     )
     vurgulu_senaryolar = st.multiselect("Senaryo Seç", options=range(0, 31))
     st.caption(f"📅 Model: **{get_run_info()}**")
-
 
 @st.cache_data(ttl=3600)
 def get_data(lat, lon, variables):
@@ -115,7 +110,6 @@ def get_data(lat, lon, variables):
         return r.json(), var_map
     except: return None, None
 
-
 if btn_calistir:
     if not secilen_veriler: st.error("Veri seçin.")
     else:
@@ -138,8 +132,7 @@ if btn_calistir:
                         
                         max_mem = df_m.idxmax(axis=1).apply(lambda x: x.split('member')[1] if 'member' in x else '?')
                         min_mem = df_m.idxmin(axis=1).apply(lambda x: x.split('member')[1] if 'member' in x else '?')
-
-                       
+                        
                         for member in cols:
                             try: mem_num = int(member.split('member')[1])
                             except: mem_num = -1
@@ -151,25 +144,37 @@ if btn_calistir:
                                 h = 'all' 
                             
                             fig.add_trace(go.Scatter(x=time, y=hourly[member], mode='lines', line=dict(color=c, width=w), opacity=o, name=f"S-{mem_num}", showlegend=leg, hoverinfo=h))
-
                         
                         h_txt = [f"📅 <b>{t.strftime('%d.%m %H:%M')}</b><br>🔺 Max: {mx:.1f} (S-{mxn})<br>⚪ Ort: {mn:.1f}<br>🔻 Min: {mi:.1f} (S-{minn})" for t, mx, mxn, mn, mi, minn in zip(time, max_val, max_mem, mean_val, min_val, min_mem)]
                         fig.add_trace(go.Scatter(x=time, y=mean_val, mode='lines', line=dict(width=0), hovertemplate="%{text}<extra></extra>", text=h_txt, showlegend=False))
                         
-                      
                         c_map = {"850hPa": "red", "2m": "orange", "Kar": "white", "Yağış": "cyan", "Rüzgar": "green", "Hamlesi": "lime", "Bulut": "gray", "Nem": "teal", "Basınç": "magenta"}
                         main_c = next((v for k, v in c_map.items() if k in secim), "cyan")
-                        
                         
                         fig.add_trace(go.Scatter(x=time, y=mean_val, mode='lines', line=dict(color=main_c, width=3.0), name="ORTALAMA", showlegend=False, hoverinfo='skip'))
 
                         if "850hPa" in secim: fig.add_hline(y=0, line_dash="dash", line_color="orange", opacity=0.5)
 
                         fig.update_layout(
-                            title=dict(text=f"{secim}", font=dict(size=14)),
+                            title=dict(text=f"{secilen_il} - {secim}", font=dict(size=14)),
                             template="plotly_dark", height=500,
                             margin=dict(l=2, r=2, t=30, b=5), 
                             hovermode="x unified",
                             legend=dict(orientation="h", y=1, x=1)
                         )
-                        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+                        
+                        
+                        chart_config = {
+                            'displayModeBar': True, 
+                            'displaylogo': False,   
+                            'modeBarButtonsToRemove': ['lasso2d', 'select2d'], 
+                            'toImageButtonOptions': {
+                                'format': 'png', 
+                                'filename': f'GFS_{secilen_il}_{secim}', 
+                                'height': 800,
+                                'width': 1200,
+                                'scale': 2 
+                            }
+                        }
+                        
+                        st.plotly_chart(fig, use_container_width=True, config=chart_config)
