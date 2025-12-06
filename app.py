@@ -120,14 +120,14 @@ with st.expander("📍 Konum ve Ayarlar", expanded=True):
         [
             "Sıcaklık (850hPa)", "Sıcaklık (500hPa)", "Sıcaklık (2m)", 
             "Kar Yağışı (cm)", "Kar Kalınlığı (cm)",
-            "Toplam Yağış (mm)", "Lifted Index (LI)", "CAPE (J/kg)",
+            "Yağış (mm)", "Lifted Index (LI)", "CAPE (J/kg)",
             "Rüzgar (10m)", "Rüzgar Hamlesi", 
             "Bağıl Nem (2m)", "Bulutluluk (%)", "Donma Seviyesi (m)",
             "Basınç"
         ],
         default=["Sıcaklık (850hPa)", "Lifted Index (LI)", "Toplam Yağış (mm)"]
     )
-    vurgulu_senaryolar = st.multiselect("Senaryo Vurgula", options=range(0, 31))
+    vurgulu_senaryolar = st.multiselect("Senaryo Seç", options=range(0, 31))
     st.caption(f"📅 Model Run: **{get_run_info()}**")
 
 @st.cache_data(ttl=3600)
@@ -138,7 +138,7 @@ def get_data(lat, lon, variables):
         "Sıcaklık (2m)": "temperature_2m",
         "Kar Yağışı (cm)": "snowfall",
         "Kar Kalınlığı (cm)": "snow_depth",
-        "Toplam Yağış (mm)": "precipitation",
+        "Yağış (mm)": "precipitation",
         "Lifted Index (LI)": "lifted_index",
         "CAPE (J/kg)": "cape",
         "Rüzgar (10m)": "windspeed_10m",
