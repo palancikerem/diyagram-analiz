@@ -87,7 +87,7 @@ with st.expander("📍 Ayarlar", expanded=True):
         ],
         default=["Sıcaklık (850hPa)", "Kar Yağışı (cm)"]
     )
-    vurgulu_senaryolar = st.multiselect("Vurgula:", options=range(0, 31))
+    vurgulu_senaryolar = st.multiselect("Senaryo Seç", options=range(0, 31))
     st.caption(f"📅 Model: **{get_run_info()}**")
 
 
