@@ -17,7 +17,6 @@ st.markdown("""
         .block-container { padding-top: 1rem; padding-bottom: 2rem; }
         h1 { font-size: 1.8rem !important; color: #4FA5D6; }
         .stSelectbox { margin-bottom: 0px; }
-        div[data-testid="stMetricValue"] { font-size: 1.2rem; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -232,47 +231,3 @@ if btn_calistir:
                             legend=dict(orientation="h", y=1.02, x=1)
                         )
                         st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
-
-                        # --- OLASILIK / RİSK TABLOSU (DÜZELTİLDİ) ---
-                        if "Kar" in secim or "Yağış" in secim or "850hPa" in secim:
-                            with st.expander(f"📊 {secim} - Olasılık ve Risk Analizi", expanded=False):
-                                df_daily = df_m.copy()
-                                # DÜZELTME BURADA: .dt silindi
-                                df_daily['Day'] = time.date 
-                                
-                                # Günlük Maksimumları al
-                                daily_max = df_daily.groupby('Day').max()
-                                
-                                # Olasılık Hesabı
-                                if "Kar" in secim:
-                                    threshold = 1 
-                                    label = "Kar Yağış İhtimali (>1cm)"
-                                elif "Yağış" in secim:
-                                    threshold = 1 
-                                    label = "Yağış İhtimali (>1mm)"
-                                elif "850hPa" in secim:
-                                    threshold = -8
-                                    label = "Kar Yapıcı Soğuk İhtimali (<-8°C)"
-                                    daily_min = df_daily.groupby('Day').min() 
-                                    probs = (daily_min < threshold).sum(axis=1) / 31 * 100
-                                else:
-                                    threshold = 0
-                                    label = "Olasılık"
-                                    probs = []
-
-                                if "850hPa" not in secim:
-                                    probs = (daily_max > threshold).sum(axis=1) / 31 * 100
-                                
-                                # Tabloyu Oluştur
-                                if len(probs) > 0:
-                                    st.write(f"**{label}** (31 Senaryo Analizi)")
-                                    
-                                    cols_metric = st.columns(6) 
-                                    for i, (day, prob) in enumerate(probs.items()):
-                                        if i < 6:
-                                            with cols_metric[i]:
-                                                st.metric(
-                                                    label=day.strftime("%d %b"), 
-                                                    value=f"%{int(prob)}",
-                                                    delta="Yüksek Risk" if prob > 70 else None
-                                                )
