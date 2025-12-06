@@ -125,7 +125,7 @@ with st.expander("📍 Konum ve Ayarlar", expanded=True):
             "Bağıl Nem (2m)", "Bulutluluk (%)", "Donma Seviyesi (m)",
             "Basınç"
         ],
-        default=["Sıcaklık (850hPa)", "Lifted Index (LI)", "Toplam Yağış (mm)"]
+        default=["Sıcaklık (850hPa)", "Lifted Index (LI)", "Yağış (mm)"]
     )
     vurgulu_senaryolar = st.multiselect("Senaryo Seç", options=range(0, 31))
     st.caption(f"📅 Model Run: **{get_run_info()}**")
