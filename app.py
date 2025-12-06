@@ -173,7 +173,7 @@ with tab_expert:
 
     @st.cache_data(ttl=3600)
     def get_expert_data(lat, lon):
-        levels = [1000, 950, 925, 900, 850, 800, 700, 600, 500, 400, 300, 250, 200, 150, 100]
+        levels = [1000, 975, 950, 925, 900, 875, 850, 825, 800, 775, 750, 725, 700, 675, 650, 625, 600, 575, 550, 525, 500, 475, 450, 425, 400, 375, 350, 325, 300, 275, 250, 225, 200, 175, 150, 125, 100]
         vars = ["temperature_2m", "dewpoint_2m"]
         for l in levels: vars.extend([f"temperature_{l}hPa", f"dewpoint_{l}hPa", f"windspeed_{l}hPa", f"winddirection_{l}hPa"])
         url = "https://api.open-meteo.com/v1/gfs"
@@ -241,49 +241,7 @@ with tab_expert:
                 fig = go.Figure()
                 
                 # Kuru adiabatlar (turuncu)
-                for theta in range(-40, 121, 10):
-                    T_line, p_line = [], []
-                    for p in np.linspace(1000, 100, 40):
-                        T_adiabat = theta * (p/1000)**0.286
-                        if -70 < T_adiabat < 50:
-                            T_line.append(skew_transform(T_adiabat, p))
-                            p_line.append(p)
-                    if T_line:
-                        fig.add_trace(go.Scatter(
-                            x=T_line, y=p_line, mode='lines',
-                            line=dict(color='rgba(255, 120, 0, 0.2)', width=1),
-                            showlegend=False, hoverinfo='skip'
-                        ))
                 
-                # Doygun adiabatlar (mavi)
-                for T_start in range(-30, 51, 10):
-                    T_line, p_line = [], []
-                    for p in np.linspace(1000, 200, 30):
-                        T_moist = T_start - (1000 - p) * 0.006
-                        if -70 < T_moist < 50:
-                            T_line.append(skew_transform(T_moist, p))
-                            p_line.append(p)
-                    if T_line:
-                        fig.add_trace(go.Scatter(
-                            x=T_line, y=p_line, mode='lines',
-                            line=dict(color='rgba(0, 150, 255, 0.2)', width=1),
-                            showlegend=False, hoverinfo='skip'
-                        ))
-                
-                # Karışım oranı çizgileri (yeşil)
-                for mixing in [1, 2, 4, 8, 12, 16, 20]:
-                    T_line, p_line = [], []
-                    for p in np.linspace(1000, 400, 20):
-                        T_mix = -20 + mixing * 3 - (1000-p) * 0.01
-                        if -70 < T_mix < 50:
-                            T_line.append(skew_transform(T_mix, p))
-                            p_line.append(p)
-                    if T_line:
-                        fig.add_trace(go.Scatter(
-                            x=T_line, y=p_line, mode='lines',
-                            line=dict(color='rgba(50, 200, 50, 0.2)', width=1),
-                            showlegend=False, hoverinfo='skip'
-                        ))
                 
                 # İzoterm çizgileri (gri dikey)
                 for temp in range(-60, 51, 10):
