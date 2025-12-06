@@ -1,287 +1,358 @@
 import streamlit as st
 import requests
 import pandas as pd
-import numpy as np
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 from datetime import datetime, timezone
+import numpy as np
+from metpy.plots import SkewT
+from metpy.units import units
+import metpy.calc as mpcalc
+import matplotlib.pyplot as plt
+from io import BytesIO
 
-# --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="MeteoAnaliz Expert", 
+    page_title="GFS - KeremPalancı", 
     layout="wide", 
     initial_sidebar_state="collapsed"
 )
 
-# --- CSS ---
 st.markdown("""
     <style>
-        .block-container { padding-top: 0.5rem; padding-bottom: 2rem; }
-        h1 { color: #4FA5D6; text-align: center; margin-bottom: 0px; font-size: 1.5rem !important;}
-        .stMetric { background-color: #1E1E1E; padding: 10px; border-radius: 5px; border: 1px solid #333; }
-        div.stButton > button { width: 100%; border-radius: 8px; font-weight: bold; }
+        .block-container { padding-top: 0.5rem; padding-bottom: 1rem; padding-left: 0.2rem; padding-right: 0.2rem; }
+        h1 { font-size: 1.3rem !important; color: #4FA5D6; text-align: center; margin-bottom: 0px; }
+        .stSelectbox, .stMultiSelect { margin-bottom: 0px; }
+        div.stButton > button { width: 100%; border-radius: 8px; }
+        .main-svg { border-radius: 8px; }
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🌪️ MeteoAnaliz Expert - GFS & Hodograf")
+st.title("Meteorolojik Diyagramlar - KeremPalancı")
 
-# --- ŞEHİRLER ---
 TR_ILLER = {
     "İstanbul": [41.00, 28.97], "Ankara": [39.93, 32.85], "İzmir": [38.42, 27.14],
-    "Adana": [37.00, 35.32], "Antalya": [36.89, 30.71], "Bursa": [40.18, 29.06],
-    "Çanakkale": [40.15, 26.41], "Edirne": [41.68, 26.56], "Erzurum": [39.90, 41.27],
-    "Eskişehir": [39.78, 30.52], "Gaziantep": [37.06, 37.38], "Kayseri": [38.73, 35.49],
-    "Konya": [37.87, 32.48], "Samsun": [41.29, 36.33], "Trabzon": [41.00, 39.72],
-    "Zonguldak": [41.45, 31.79], "Muğla": [37.21, 28.36], "Van": [38.50, 43.38]
+    "Adana": [37.00, 35.32], "Adıyaman": [37.76, 38.28], "Afyonkarahisar": [38.75, 30.54],
+    "Ağrı": [39.72, 43.05], "Aksaray": [38.37, 34.03], "Amasya": [40.65, 35.83],
+    "Antalya": [36.89, 30.71], "Ardahan": [41.11, 42.70], "Artvin": [41.18, 41.82],
+    "Aydın": [37.84, 27.84], "Balıkesir": [39.65, 27.88], "Bartın": [41.63, 32.34],
+    "Batman": [37.88, 41.13], "Bayburt": [40.26, 40.22], "Bilecik": [40.14, 29.98],
+    "Bingöl": [38.88, 40.49], "Bitlis": [38.40, 42.10], "Bolu": [40.73, 31.61],
+    "Burdur": [37.72, 30.29], "Bursa": [40.18, 29.06], "Çanakkale": [40.15, 26.41],
+    "Çankırı": [40.60, 33.61], "Çorum": [40.55, 34.95], "Denizli": [37.77, 29.09],
+    "Diyarbakır": [37.91, 40.24], "Düzce": [40.84, 31.16], "Edirne": [41.68, 26.56],
+    "Elazığ": [38.68, 39.22], "Erzincan": [39.75, 39.50], "Erzurum": [39.90, 41.27],
+    "Eskişehir": [39.78, 30.52], "Gaziantep": [37.06, 37.38], "Giresun": [40.91, 38.39],
+    "Gümüşhane": [40.46, 39.48], "Hakkari": [37.58, 43.74], "Hatay": [36.40, 36.34],
+    "Iğdır": [39.92, 44.04], "Isparta": [37.76, 30.56], "Kahramanmaraş": [37.58, 36.93],
+    "Karabük": [41.20, 32.62], "Karaman": [37.18, 33.22], "Kars": [40.60, 43.10],
+    "Kastamonu": [41.38, 33.78], "Kayseri": [38.73, 35.49], "Kırıkkale": [39.85, 33.51],
+    "Kırklareli": [41.73, 27.22], "Kırşehir": [39.15, 34.17], "Kilis": [36.71, 37.11],
+    "Kocaeli": [40.85, 29.88], "Konya": [37.87, 32.48], "Kütahya": [39.42, 29.98],
+    "Malatya": [38.35, 38.31], "Manisa": [38.61, 27.43], "Mardin": [37.32, 40.74],
+    "Mersin": [36.80, 34.64], "Muğla": [37.21, 28.36], "Muş": [38.74, 41.49],
+    "Nevşehir": [38.62, 34.71], "Niğde": [37.97, 34.68], "Ordu": [40.98, 37.88],
+    "Osmaniye": [37.07, 36.25], "Rize": [41.02, 40.52], "Sakarya": [40.77, 30.40],
+    "Samsun": [41.29, 36.33], "Siirt": [37.93, 41.94], "Sinop": [42.03, 35.15],
+    "Sivas": [39.75, 37.02], "Şanlıurfa": [37.16, 38.79], "Şırnak": [37.52, 42.46],
+    "Tekirdağ": [40.98, 27.51], "Tokat": [40.31, 36.55], "Trabzon": [41.00, 39.72],
+    "Tunceli": [39.11, 39.55], "Uşak": [38.68, 29.41], "Van": [38.50, 43.38],
+    "Yalova": [40.65, 29.27], "Yozgat": [39.82, 34.81], "Zonguldak": [41.45, 31.79]
 }
 
-# --- MATEMATİKSEL HESAPLAMALAR ---
-def calculate_indices(hourly_data, idx):
-    """
-    K-Index, Total Totals ve LCL gibi kritik değerleri hesaplar.
-    """
-    try:
-        # Verileri çek
-        def get_val(param, level):
-            return hourly_data[f"{param}_{level}hPa"][idx]
+def get_run_info():
+    now_utc = datetime.now(timezone.utc)
+    hour = now_utc.hour
+    if 3 <= hour < 9: return "00Z (Gece)"
+    elif 9 <= hour < 15: return "06Z (Sabah)"
+    elif 15 <= hour < 21: return "12Z (Öğle)"
+    else: return "18Z (Akşam)"
 
-        T850 = get_val("temperature", 850)
-        Td850 = get_val("dewpoint", 850)
-        T700 = get_val("temperature", 700)
-        Td700 = get_val("dewpoint", 700)
-        T500 = get_val("temperature", 500)
-        
-        # --- K-INDEX ---
-        # Formül: (T850 - T500) + Td850 - (T700 - Td700)
-        k_index = (T850 - T500) + Td850 - (T700 - Td700)
-        
-        # --- TOTAL TOTALS (TT) ---
-        # Formül: (T850 + Td850) - 2*T500
-        tt_index = (T850 + Td850) - (2 * T500)
-        
-        # --- LCL (Yaklaşık Bulut Tabanı) ---
-        # Formül: 125 * (T_yer - Td_yer)
-        T_sfc = hourly_data["temperature_2m"][idx]
-        Td_sfc = hourly_data["dewpoint_2m"][idx]
-        lcl_m = 125 * (T_sfc - Td_sfc)
-        
-        return k_index, tt_index, lcl_m
-    except:
-        return None, None, None
+with st.expander("📍 Ayarlar", expanded=True):
+    col_a, col_b = st.columns([3, 1])
+    with col_a:
+        secilen_il = st.selectbox("Şehir:", list(TR_ILLER.keys()), index=0)
+        lat_il, lon_il = TR_ILLER[secilen_il]
+    with col_b:
+        st.write("")
+        st.write("") 
+        btn_calistir = st.button("Başlat", type="primary", use_container_width=True)
 
-# --- VERİ ÇEKME ---
+    secilen_veriler = st.multiselect(
+        "Veriler:",
+        [
+            "Sıcaklık (850hPa)", "Sıcaklık (2m)", "Kar Yağışı (cm)", 
+            "Yağış (mm)", "Rüzgar (10m)", "Rüzgar Hamlesi", 
+            "Bağıl Nem (2m)", "Bulutluluk (%)", "Donma Seviyesi (m)",
+            "CAPE", "Basınç", "SkewT Diyagramı"
+        ],
+        default=["Sıcaklık (850hPa)", "Kar Yağışı (cm)"]
+    )
+    vurgulu_senaryolar = st.multiselect("Senaryo Seç", options=range(0, 31))
+    st.caption(f"📅 Model: **{get_run_info()}**")
+
 @st.cache_data(ttl=3600)
-def get_sounding_data(lat, lon):
-    levels = [1000, 950, 925, 900, 850, 800, 700, 600, 500, 400, 300, 250, 200]
-    vars = ["temperature_2m", "dewpoint_2m", "windspeed_10m", "winddirection_10m"]
+def get_data(lat, lon, variables):
+    var_map = {
+        "Sıcaklık (850hPa)": "temperature_850hPa",
+        "Sıcaklık (2m)": "temperature_2m",
+        "Kar Yağışı (cm)": "snowfall",
+        "Yağış (mm)": "precipitation",
+        "Rüzgar (10m)": "windspeed_10m",
+        "Rüzgar Hamlesi": "windgusts_10m",
+        "Bağıl Nem (2m)": "relativehumidity_2m",
+        "Bulutluluk (%)": "cloudcover",
+        "Donma Seviyesi (m)": "freezinglevel_height",
+        "CAPE": "cape",
+        "Basınç": "pressure_msl"
+    }
+    api_vars = [var_map[v] for v in variables if v in var_map]
     
-    for lvl in levels:
-        vars.append(f"temperature_{lvl}hPa")
-        vars.append(f"dewpoint_{lvl}hPa")
-        vars.append(f"windspeed_{lvl}hPa")
-        vars.append(f"winddirection_{lvl}hPa")
-        vars.append(f"geopotential_height_{lvl}hPa")
-        
-    url = "https://api.open-meteo.com/v1/gfs"
+    url = "https://ensemble-api.open-meteo.com/v1/ensemble"
     params = {
-        "latitude": lat, "longitude": lon, 
-        "hourly": vars, 
-        "timezone": "auto", 
-        "forecast_days": 3 # 3 Günlük detaylı veri yeterli
+        "latitude": lat, 
+        "longitude": lon, 
+        "hourly": api_vars, 
+        "models": "gfs_seamless", 
+        "timezone": "auto"
     }
     
     try:
         r = requests.get(url, params=params, timeout=15)
         r.raise_for_status()
-        return r.json(), levels
-    except: return None, None
+        return r.json(), var_map
+    except: 
+        return None, None
 
-# --- ARAYÜZ BAŞLANGIÇ ---
-with st.expander("📍 Konum ve Ayarlar", expanded=True):
-    c1, c2 = st.columns([3, 1])
-    with c1:
-        secilen_il = st.selectbox("Şehir Seç:", list(TR_ILLER.keys()))
-        lat_il, lon_il = TR_ILLER[secilen_il]
-    with c2:
-        st.write("")
-        st.write("")
-        btn_calistir = st.button("ANALİZ ET", type="primary")
+@st.cache_data(ttl=3600)
+def get_skewt_data(lat, lon):
+    """SkewT için basınç seviyelerinde sıcaklık, nem ve rüzgar verisi"""
+    pressure_levels = ["1000", "975", "950", "925", "900", "850", "800", "700", "600", "500", "400", "300", "250", "200", "150", "100"]
+    
+    url = "https://api.open-meteo.com/v1/forecast"
+    params = {
+        "latitude": lat,
+        "longitude": lon,
+        "hourly": [
+            f"temperature_{p}hPa" for p in pressure_levels
+        ] + [
+            f"relativehumidity_{p}hPa" for p in pressure_levels
+        ] + [
+            f"windspeed_{p}hPa" for p in pressure_levels
+        ] + [
+            f"winddirection_{p}hPa" for p in pressure_levels
+        ],
+        "temperature_unit": "celsius",
+        "windspeed_unit": "ms"
+    }
+    
+    try:
+        r = requests.get(url, params=params, timeout=15)
+        r.raise_for_status()
+        return r.json(), pressure_levels
+    except:
+        return None, None
 
-# --- ANA İŞLEM ---
-if btn_calistir or 'expert_data' in st.session_state:
-    if btn_calistir:
-        with st.spinner("Atmosferik veriler ve rüzgar vektörleri işleniyor..."):
-            data, levels = get_sounding_data(lat_il, lon_il)
-            if data:
-                st.session_state['expert_data'] = data
-                st.session_state['expert_lvls'] = levels
-            else:
-                st.error("Veri sunucusuna ulaşılamadı.")
-
-    if 'expert_data' in st.session_state:
-        data = st.session_state['expert_data']
-        levels = st.session_state['expert_lvls']
-        hourly = data['hourly']
-        time = pd.to_datetime(hourly['time'])
+def create_skewt_diagram(data, pressure_levels, time_index, location_name):
+    """Profesyonel seviyede SkewT-logP diyagramı oluşturur"""
+    
+    hourly = data['hourly']
+    time_str = pd.to_datetime(hourly['time'][time_index]).strftime('%Y-%m-%d %H:%M')
+    
+    # Veri hazırlama
+    p = np.array([float(lv) for lv in pressure_levels]) * units.hPa
+    T = np.array([hourly[f'temperature_{lv}hPa'][time_index] for lv in pressure_levels]) * units.degC
+    rh = np.array([hourly[f'relativehumidity_{lv}hPa'][time_index] for lv in pressure_levels]) * units.percent
+    
+    # Çiğ noktası hesaplama
+    Td = mpcalc.dewpoint_from_relative_humidity(T, rh)
+    
+    # Rüzgar verileri
+    wind_speed = np.array([hourly[f'windspeed_{lv}hPa'][time_index] for lv in pressure_levels]) * units('m/s')
+    wind_dir = np.array([hourly[f'winddirection_{lv}hPa'][time_index] for lv in pressure_levels]) * units.degree
+    
+    # Rüzgar bileşenleri
+    u, v = mpcalc.wind_components(wind_speed, wind_dir)
+    
+    # Figure oluştur
+    fig = plt.figure(figsize=(12, 10))
+    skew = SkewT(fig, rotation=45)
+    
+    # Sıcaklık ve çiğ noktası profili
+    skew.plot(p, T, 'r-', linewidth=2.5, label='Sıcaklık')
+    skew.plot(p, Td, 'g-', linewidth=2.5, label='Çiğ Noktası')
+    
+    # Kuru ve doygun adiabatlar
+    skew.plot_dry_adiabats(alpha=0.3, color='orangered', linewidth=0.8)
+    skew.plot_moist_adiabats(alpha=0.3, color='blue', linewidth=0.8)
+    skew.plot_mixing_lines(alpha=0.3, color='green', linewidth=0.8)
+    
+    # Parsel yolu hesaplama (yüzey tabanlı)
+    try:
+        parcel_prof = mpcalc.parcel_profile(p, T[0], Td[0])
+        skew.plot(p, parcel_prof, 'k--', linewidth=2, label='Parsel Yolu', alpha=0.7)
         
-        # SAAT SEÇİMİ
-        st.markdown("---")
-        col_time, col_info = st.columns([2, 3])
+        # CAPE ve CIN hesaplama
+        cape, cin = mpcalc.cape_cin(p, T, Td, parcel_prof)
         
-        with col_time:
-            selected_time_str = st.select_slider(
-                "📅 Analiz Saati:",
-                options=[t.strftime('%d %b %H:%M') for t in time],
-                value=time[0].strftime('%d %b %H:%M')
-            )
-            idx = [t.strftime('%d %b %H:%M') for t in time].index(selected_time_str)
-
-        # İNDEKS HESAPLAMA
-        k_idx, tt_idx, lcl_val = calculate_indices(hourly, idx)
+        # LCL, LFC, EL hesaplama
+        lcl_pressure, lcl_temp = mpcalc.lcl(p[0], T[0], Td[0])
+        lfc_pressure, lfc_temp = mpcalc.lfc(p, T, Td)
+        el_pressure, el_temp = mpcalc.el(p, T, Td)
         
-        with col_info:
-            # Kritik Değerler Kartları
-            cm1, cm2, cm3, cm4 = st.columns(4)
+    except:
+        cape, cin = None, None
+        lcl_pressure, lfc_pressure, el_pressure = None, None, None
+    
+    # Rüzgar okları
+    skew.plot_barbs(p[::2], u[::2], v[::2], xloc=1.05, length=6)
+    
+    # Eksen ayarları
+    skew.ax.set_ylim(1000, 100)
+    skew.ax.set_xlim(-40, 50)
+    skew.ax.set_xlabel('Sıcaklık (°C)', fontsize=12, fontweight='bold')
+    skew.ax.set_ylabel('Basınç (hPa)', fontsize=12, fontweight='bold')
+    
+    # Başlık ve bilgiler
+    title_text = f'SkewT-logP Diyagramı\n{location_name} - {time_str}'
+    skew.ax.set_title(title_text, fontsize=14, fontweight='bold', pad=20)
+    
+    # Parametreler kutusu
+    info_text = []
+    if cape is not None:
+        info_text.append(f'CAPE: {cape.magnitude:.0f} J/kg')
+    if cin is not None:
+        info_text.append(f'CIN: {cin.magnitude:.0f} J/kg')
+    if lcl_pressure is not None:
+        info_text.append(f'LCL: {lcl_pressure.magnitude:.0f} hPa')
+    if lfc_pressure is not None:
+        info_text.append(f'LFC: {lfc_pressure.magnitude:.0f} hPa')
+    if el_pressure is not None:
+        info_text.append(f'EL: {el_pressure.magnitude:.0f} hPa')
+    
+    if info_text:
+        skew.ax.text(0.02, 0.95, '\n'.join(info_text), 
+                     transform=skew.ax.transAxes,
+                     fontsize=10, verticalalignment='top',
+                     bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+    
+    # Legend
+    skew.ax.legend(loc='upper left', fontsize=10)
+    
+    plt.tight_layout()
+    
+    # BytesIO'ya kaydet
+    buf = BytesIO()
+    plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+    buf.seek(0)
+    plt.close()
+    
+    return buf
+
+if btn_calistir:
+    if not secilen_veriler:
+        st.error("Veri seçin.")
+    else:
+        # SkewT seçildi mi kontrol et
+        skewt_secildi = "SkewT Diyagramı" in secilen_veriler
+        normal_veriler = [v for v in secilen_veriler if v != "SkewT Diyagramı"]
+        
+        # Normal veriler için
+        if normal_veriler:
+            with st.spinner('Veri alınıyor...'):
+                data, mapping = get_data(lat_il, lon_il, normal_veriler)
+                if data:
+                    hourly = data['hourly']
+                    time = pd.to_datetime(hourly['time'])
+                    
+                    for secim in normal_veriler:
+                        api_kod = mapping[secim]
+                        fig = go.Figure()
+                        cols = [k for k in hourly.keys() if k.startswith(api_kod) and 'member' in k]
+                        
+                        if cols:
+                            df_m = pd.DataFrame(hourly)[cols]
+                            mean_val = df_m.mean(axis=1)
+                            max_val = df_m.max(axis=1)
+                            min_val = df_m.min(axis=1)
+                            
+                            max_mem = df_m.idxmax(axis=1).apply(lambda x: x.split('member')[1] if 'member' in x else '?')
+                            min_mem = df_m.idxmin(axis=1).apply(lambda x: x.split('member')[1] if 'member' in x else '?')
+
+                            for member in cols:
+                                try: mem_num = int(member.split('member')[1])
+                                except: mem_num = -1
+                                
+                                c, w, o, leg = 'lightgrey', 0.5, 0.4, False
+                                h = 'skip'
+                                if mem_num in vurgulu_senaryolar:
+                                    c, w, o, leg = '#FF1493', 2.0, 1.0, True
+                                    h = 'all' 
+                                
+                                fig.add_trace(go.Scatter(x=time, y=hourly[member], mode='lines', 
+                                                        line=dict(color=c, width=w), opacity=o, 
+                                                        name=f"S-{mem_num}", showlegend=leg, hoverinfo=h))
+
+                            h_txt = [f"📅 <b>{t.strftime('%d.%m %H:%M')}</b><br>🔺 Max: {mx:.1f} (S-{mxn})<br>⚪ Ort: {mn:.1f}<br>🔻 Min: {mi:.1f} (S-{minn})" 
+                                    for t, mx, mxn, mn, mi, minn in zip(time, max_val, max_mem, mean_val, min_val, min_mem)]
+                            fig.add_trace(go.Scatter(x=time, y=mean_val, mode='lines', line=dict(width=0), 
+                                                    hovertemplate="%{text}<extra></extra>", text=h_txt, showlegend=False))
+                            
+                            c_map = {"850hPa": "red", "2m": "orange", "Kar": "white", "Yağış": "cyan", 
+                                    "Rüzgar": "green", "Hamlesi": "lime", "Bulut": "gray", 
+                                    "Nem": "teal", "Basınç": "magenta"}
+                            main_c = next((v for k, v in c_map.items() if k in secim), "cyan")
+                            
+                            fig.add_trace(go.Scatter(x=time, y=mean_val, mode='lines', 
+                                                    line=dict(color=main_c, width=3.0), 
+                                                    name="ORTALAMA", showlegend=False, hoverinfo='skip'))
+
+                            if "850hPa" in secim: 
+                                fig.add_hline(y=0, line_dash="dash", line_color="orange", opacity=0.5)
+
+                            fig.update_layout(
+                                title=dict(text=f"{secim}", font=dict(size=14)),
+                                template="plotly_dark", height=500,
+                                margin=dict(l=2, r=2, t=30, b=5), 
+                                hovermode="x unified",
+                                legend=dict(orientation="h", y=1, x=1)
+                            )
+                            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+        
+        # SkewT için
+        if skewt_secildi:
+            st.markdown("---")
+            st.subheader("🌡️ SkewT-logP Diyagramı")
             
-            with cm1:
-                st.metric("Sıcaklık (2m)", f"{hourly['temperature_2m'][idx]}°C")
-            with cm2:
-                # K-Index Renklendirme
-                k_durum = "Düşük"
-                if k_idx > 30: k_durum = "Yüksek Risk!"
-                elif k_idx > 20: k_durum = "Orta Risk"
-                st.metric("K-Index (Oraj)", f"{k_idx:.1f}", k_durum)
-            with cm3:
-                # TT Renklendirme
-                tt_durum = "Sakin"
-                if tt_idx > 50: tt_durum = "Şiddetli!"
-                elif tt_idx > 44: tt_durum = "Olası"
-                st.metric("Total Totals", f"{tt_idx:.1f}", tt_durum)
-            with cm4:
-                st.metric("Bulut Tabanı (LCL)", f"{int(lcl_val)}m")
-
-        # --- GRAFİK HAZIRLIĞI ---
-        temps, dews, winds, dirs, press = [], [], [], [], []
-        u_winds, v_winds = [], [] # Hodograf için
-
-        for lvl in levels:
-            try:
-                t = hourly[f"temperature_{lvl}hPa"][idx]
-                d = hourly[f"dewpoint_{lvl}hPa"][idx]
-                w = hourly[f"windspeed_{lvl}hPa"][idx]
-                wd = hourly[f"winddirection_{lvl}hPa"][idx]
+            with st.spinner('SkewT verisi alınıyor...'):
+                skewt_data, pressure_levels = get_skewt_data(lat_il, lon_il)
                 
-                temps.append(t)
-                dews.append(d)
-                press.append(lvl)
-                winds.append(w)
-                dirs.append(wd)
-                
-                # Rüzgar Vektör Hesabı (HODOGRAF İÇİN)
-                # Radyana çevir
-                rad = np.deg2rad(wd)
-                # U (Doğu-Batı), V (Kuzey-Güney) bileşenleri
-                # Meteorolojide rüzgarın GELDİĞİ yön kullanılır, o yüzden - ile çarparız
-                u = -w * np.sin(rad)
-                v = -w * np.cos(rad)
-                u_winds.append(u)
-                v_winds.append(v)
-                
-            except: pass
-
-        # --- ÇİFT KOLON DÜZENİ (SKEW-T SOLDA, HODOGRAF SAĞDA) ---
-        col_skew, col_hodo = st.columns([2, 1])
-
-        # ==========================
-        # 1. SOL: SKEW-T / PROFIL
-        # ==========================
-        with col_skew:
-            # 2 Subplot: Biri Sıcaklık, Biri Rüzgar Hızı
-            fig = make_subplots(rows=1, cols=2, shared_yaxes=True, column_widths=[0.8, 0.2], horizontal_spacing=0.02)
-
-            # A) SICAKLIK & DEWPOINT
-            fig.add_trace(go.Scatter(x=temps, y=press, mode='lines+markers', name='Sıcaklık', line=dict(color='red', width=3)), row=1, col=1)
-            fig.add_trace(go.Scatter(x=dews, y=press, mode='lines+markers', name='Dewpoint', line=dict(color='#00FF00', width=2)), row=1, col=1)
-            
-            # Alan Boyama (Shading) - Nemli alanı gösterir
-            fig.add_trace(go.Scatter(
-                x=temps + dews[::-1], # Poligon oluşturuyoruz
-                y=press + press[::-1],
-                fill='toself',
-                fillcolor='rgba(0, 255, 0, 0.1)',
-                line=dict(color='rgba(255,255,255,0)'),
-                showlegend=False,
-                hoverinfo='skip'
-            ), row=1, col=1)
-
-            # 0 Derece Çizgisi
-            fig.add_vline(x=0, line_color="cyan", line_width=1, opacity=0.5, row=1, col=1, annotation_text="0°C")
-
-            # B) RÜZGAR HIZI (Bar)
-            fig.add_trace(go.Bar(
-                x=winds, y=press, orientation='h', 
-                name='Rüzgar (km/s)', 
-                marker=dict(color=winds, colorscale='Viridis'),
-                showlegend=False
-            ), row=1, col=2)
-
-            # AYARLAR
-            fig.update_layout(
-                title="🌡️ Atmosferik Profil (Skew-T Simülasyonu)",
-                template="plotly_dark",
-                height=600,
-                yaxis=dict(title="Basınç (hPa)", autorange="reversed", tickvals=[1000, 850, 700, 500, 300, 200]),
-                xaxis=dict(title="Sıcaklık (°C)", range=[-40, 35], dtick=5, gridcolor='#333'),
-                xaxis2=dict(title="Rüzgar Hızı (km/s)", title_font=dict(size=10)),
-                legend=dict(x=0, y=1, bgcolor='rgba(0,0,0,0)')
-            )
-            st.plotly_chart(fig, use_container_width=True)
-
-        # ==========================
-        # 2. SAĞ: HODOGRAF (Rüzgar Sarmalı)
-        # ==========================
-        with col_hodo:
-            fig_hodo = go.Figure()
-            
-            # Hodograf Çizgisi
-            fig_hodo.add_trace(go.Scatter(
-                x=u_winds, y=v_winds,
-                mode='lines+markers+text',
-                text=[str(p) if p in [1000, 850, 700, 500, 300] else "" for p in press],
-                textposition="top right",
-                marker=dict(
-                    size=8,
-                    color=press, # Yüksekliğe göre renk
-                    colorscale='Jet_r', # Alçak seviye sıcak, yüksek seviye soğuk renk
-                    showscale=True,
-                    colorbar=dict(title="hPa", len=0.5)
-                ),
-                line=dict(color='white', width=2),
-                name="Rüzgar Vektörü"
-            ))
-
-            # Merkez Nokta (0,0)
-            fig_hodo.add_trace(go.Scatter(x=[0], y=[0], mode='markers', marker=dict(color='white', symbol='cross', size=10), showlegend=False))
-
-            # Halka Izgaralar (Hız Göstergesi)
-            for r in [10, 20, 30, 50, 70]:
-                fig_hodo.add_shape(type="circle", xref="x", yref="y", x0=-r, y0=-r, x1=r, y1=r, line_color="gray", opacity=0.3)
-
-            fig_hodo.update_layout(
-                title="🌀 Hodograf (Rüzgar Gülü)",
-                template="plotly_dark",
-                height=600,
-                width=600,
-                xaxis=dict(title="U Bileşeni (Doğu-Batı)", range=[-60, 60], zeroline=True, zerolinewidth=2),
-                yaxis=dict(title="V Bileşeni (Kuzey-Güney)", range=[-60, 60], zeroline=True, zerolinewidth=2, scaleanchor="x", scaleratio=1),
-                margin=dict(l=10, r=10, t=40, b=10)
-            )
-            
-            st.plotly_chart(fig_hodo, use_container_width=True)
-            
-            st.info("""
-            **Hodograf Nedir?**
-            Rüzgarın yerden yükseldikçe nasıl yön değiştirdiğini gösterir.
-            - Çizgi **saat yönünde** dönüyorsa (kırmızı->mavi), Süper Hücre riski artar.
-            - Çizgi **düz** ise, rüzgar yönü sabittir.
-            """)
+                if skewt_data and pressure_levels:
+                    hourly = skewt_data['hourly']
+                    times = pd.to_datetime(hourly['time'])
+                    
+                    # Zaman seçici
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        selected_time = st.select_slider(
+                            "Zaman seçin:",
+                            options=range(len(times)),
+                            format_func=lambda x: times[x].strftime('%d.%m %H:%M'),
+                            value=0
+                        )
+                    with col2:
+                        st.write("")
+                        st.write("")
+                        if st.button("Diyagram Oluştur", type="primary"):
+                            with st.spinner('SkewT diyagramı oluşturuluyor...'):
+                                try:
+                                    img_buffer = create_skewt_diagram(
+                                        skewt_data, 
+                                        pressure_levels, 
+                                        selected_time, 
+                                        secilen_il
+                                    )
+                                    st.image(img_buffer, use_container_width=True)
+                                    st.success("✅ Diyagram başarıyla oluşturuldu!")
+                                except Exception as e:
+                                    st.error(f"Diyagram oluşturulurken hata: {str(e)}")
+                else:
+                    st.error("SkewT verisi alınamadı.")
