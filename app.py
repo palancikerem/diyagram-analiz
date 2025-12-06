@@ -173,7 +173,7 @@ with tab_expert:
 
     @st.cache_data(ttl=3600)
     def get_expert_data(lat, lon):
-        levels = [1000, 950, 925, 900, 850, 800, 700, 600, 500, 400, 300, 250, 200]
+        levels = [1000, 950, 925, 900, 850, 800, 700, 600, 500, 400, 300, 250, 200, 150, 100]
         vars = ["temperature_2m", "dewpoint_2m"]
         for l in levels: vars.extend([f"temperature_{l}hPa", f"dewpoint_{l}hPa", f"windspeed_{l}hPa", f"winddirection_{l}hPa"])
         url = "https://api.open-meteo.com/v1/gfs"
