@@ -56,10 +56,10 @@ TR_ILLER = {
 def get_run_info():
     now_utc = datetime.now(timezone.utc)
     hour = now_utc.hour
-    if 3 <= hour < 9: return "00Z (Gece)"
-    elif 9 <= hour < 15: return "06Z (Sabah)"
-    elif 15 <= hour < 21: return "12Z (Öğle)"
-    else: return "18Z (Akşam)"
+    if 3 <= hour < 9: return "00Z (Sabah)"
+    elif 9 <= hour < 15: return "06Z (Öğle)"
+    elif 15 <= hour < 21: return "12Z (Akşam)"
+    else: return "18Z (Gece)"
 
 
 @st.cache_data
