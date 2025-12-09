@@ -52,14 +52,17 @@ TR_ILLER = {
     "Yalova": [40.65, 29.27], "Yozgat": [39.82, 34.81], "Zonguldak": [41.45, 31.79]
 }
 
+def clean_filename(text):
+    """Türkçe karakterleri ve boşlukları temizler"""
+    tr_map = str.maketrans("ığüşöçİĞÜŞÖÇ ", "igusocIGUSOC_")
+    return text.translate(tr_map)
+
 def get_run_info():
     now_utc = datetime.now(timezone.utc)
     hour = now_utc.hour
     minute = now_utc.minute
-    
     current_minutes = hour * 60 + minute
     
-  
     if current_minutes >= (3 * 60 + 30) and current_minutes < (9 * 60 + 30):
         return "00Z (Sabah)"
     elif current_minutes >= (9 * 60 + 30) and current_minutes < (15 * 60 + 30):
@@ -155,7 +158,7 @@ with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
 
 def add_watermark(fig):
     fig.add_annotation(
-        text="By KeremPalancı",
+        text="Analiz: KeremPalancı",
         xref="paper", yref="paper",
         x=0.99, y=0.01,
         showarrow=False,
@@ -209,8 +212,8 @@ def get_comparison_data(lat, lon):
     except: return None
 
 if btn_calistir:
-    
     zaman_damgasi = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    clean_loc = clean_filename(location_name)
 
     if calisma_modu == "📉 GFS Senaryoları (Diyagram)":
         if not secilen_veriler: st.error("Lütfen en az bir veri seçin.")
@@ -232,6 +235,8 @@ if btn_calistir:
                             if secim == "Kar Kalınlığı (cm)": df_m = df_m * 100
                             
                             mean_val = df_m.mean(axis=1)
+                            max_val = df_m.max(axis=1) # EKLENDİ
+                            min_val = df_m.min(axis=1) # EKLENDİ
                             
                             for member in cols:
                                 try: mem_num = int(member.split('member')[1])
@@ -247,7 +252,10 @@ if btn_calistir:
                             
                             c_map = {"850hPa": "red", "500hPa": "#00BFFF", "2m": "orange", "Kar": "white", "Yağış": "cyan", "LI": "#DC143C"}
                             main_c = next((v for k, v in c_map.items() if k in secim), "cyan")
+                   
                             fig.add_trace(go.Scatter(x=time, y=mean_val, mode='lines', line=dict(color=main_c, width=3.0), name="ORTALAMA"))
+                            fig.add_trace(go.Scatter(x=time, y=max_val, mode='lines', line=dict(color='green', width=2, dash='dash'), name="EN YÜKSEK"))
+                            fig.add_trace(go.Scatter(x=time, y=min_val, mode='lines', line=dict(color='blue', width=2, dash='dash'), name="EN DÜŞÜK"))
 
                             if "Sıcaklık" in secim: fig.add_hline(y=0, line_dash="dash", line_color="orange", opacity=0.5)
                             if "Lifted Index" in secim: fig.add_hline(y=0, line_dash="solid", line_color="white", opacity=0.8)
@@ -259,20 +267,20 @@ if btn_calistir:
                                 hovermode="x unified", legend=dict(orientation="h", y=1, x=1)
                             )
                             fig = add_watermark(fig)
-                            
-                         
-                            temiz_isim = secim.replace(" ", "_").replace("(", "").replace(")", "")
-                            dosya_adi = f"{location_name}_{temiz_isim}_{zaman_damgasi}"
+                          
+                            clean_type = clean_filename(secim)
+                            dosya_adi = f"{clean_loc}_{clean_type}_{zaman_damgasi}"
                             
                             st.plotly_chart(
                                 fig, 
                                 use_container_width=True,
                                 config={
+                                    'displayModeBar': True,
                                     'toImageButtonOptions': {
                                         'format': 'png',
                                         'filename': dosya_adi,
-                                        'height': 700,
-                                        'width': 1200,
+                                        'height': 720,
+                                        'width': 1280,
                                         'scale': 2
                                     }
                                 }
@@ -317,14 +325,14 @@ if btn_calistir:
                     )
                     fig = add_watermark(fig)
                     
-               
-                    temiz_isim = savas_parametresi.replace(" ", "_").replace("(", "").replace(")", "")
-                    dosya_adi = f"{location_name}_KIYASLAMA_{temiz_isim}_{zaman_damgasi}"
+                    clean_type = clean_filename(savas_parametresi)
+                    dosya_adi = f"{clean_loc}_KIYASLAMA_{clean_type}_{zaman_damgasi}"
                     
                     st.plotly_chart(
                         fig, 
                         use_container_width=True,
                         config={
+                            'displayModeBar': True,
                             'toImageButtonOptions': {
                                 'format': 'png',
                                 'filename': dosya_adi,
