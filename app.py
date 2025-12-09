@@ -155,7 +155,7 @@ with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
 
 def add_watermark(fig):
     fig.add_annotation(
-        text="Analiz: KeremPalancı",
+        text="By KeremPalancı",
         xref="paper", yref="paper",
         x=0.99, y=0.01,
         showarrow=False,
