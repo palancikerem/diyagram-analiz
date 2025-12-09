@@ -292,11 +292,11 @@ if btn_calistir:
                     fig = go.Figure()
                     
                     if temp_gfs:
-                        fig.add_trace(go.Scatter(x=zaman, y=temp_gfs, mode='lines', name='🇺🇸 GFS', line=dict(color='red', width=2)))
+                        fig.add_trace(go.Scatter(x=zaman, y=temp_gfs, mode='lines', name='GFS', line=dict(color='red', width=2)))
                     if temp_icon:
-                        fig.add_trace(go.Scatter(x=zaman, y=temp_icon, mode='lines', name='🇩🇪 ICON', line=dict(color='green', width=2)))
+                        fig.add_trace(go.Scatter(x=zaman, y=temp_icon, mode='lines', name='ICON', line=dict(color='green', width=2)))
                     if temp_gem:
-                        fig.add_trace(go.Scatter(x=zaman, y=temp_gem, mode='lines', name='🇨🇦 GEM', line=dict(color='blue', width=3, dash='dash')))
+                        fig.add_trace(go.Scatter(x=zaman, y=temp_gem, mode='lines', name='GEM', line=dict(color='blue', width=3, dash='dash')))
                     
                     fig.update_layout(
                         title=dict(text=f"⚔️ Model Kapışması: {location_name} - {savas_parametresi}", font=dict(size=16)),
