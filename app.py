@@ -5,7 +5,7 @@ import plotly.graph_objects as go
 from datetime import datetime, timezone
 
 st.set_page_config(
-    page_title="KeremPalancı - Diyagram", 
+    page_title="MeteoAnaliz - KeremPalancı", 
     layout="wide", 
     initial_sidebar_state="collapsed"
 )
@@ -238,15 +238,11 @@ if btn_calistir:
                             max_val = df_m.max(axis=1)
                             min_val = df_m.min(axis=1)
                             
-                            # Max ve Min senaryolarının isimlerini (Member ID) bulma
-                            # Örn: temperature_2m_gfs_seamless_member12 -> S-12
-                            def get_mem_name(col_name):
-                                try: return f"S-{int(col_name.split('member')[1])}"
-                                except: return "S-?"
-
-                            max_members = df_m.idxmax(axis=1).apply(get_mem_name)
-                            min_members = df_m.idxmin(axis=1).apply(get_mem_name)
+                            # Hangi üyenin max ve min olduğunu bulma
+                            max_mem = df_m.idxmax(axis=1).apply(lambda x: x.split('member')[1] if 'member' in x else '?')
+                            min_mem = df_m.idxmin(axis=1).apply(lambda x: x.split('member')[1] if 'member' in x else '?')
                             
+                            # Üyeleri çizdirme (Gri Arkaplan)
                             for member in cols:
                                 try: mem_num = int(member.split('member')[1])
                                 except: mem_num = -1
@@ -259,30 +255,19 @@ if btn_calistir:
                                 
                                 fig.add_trace(go.Scatter(x=time, y=df_m[member], mode='lines', line=dict(color=c, width=w), opacity=o, name=f"S-{mem_num}", showlegend=leg, hoverinfo=h))
                             
+                            # Renk Haritası
                             c_map = {"850hPa": "red", "500hPa": "#00BFFF", "2m": "orange", "Kar": "white", "Yağış": "cyan", "LI": "#DC143C"}
                             main_c = next((v for k, v in c_map.items() if k in secim), "cyan")
                             
-                            fig.add_trace(go.Scatter(x=time, y=mean_val, mode='lines', line=dict(color=main_c, width=3.0), name="ORTALAMA"))
+                            # --- TEK HOVER KUTUSU MANTIĞI (Senin istediğin kısım) ---
+                            # Hover için özel metin listesi hazırlıyoruz
+                            h_txt = [f"📅 <b>{t.strftime('%d.%m %H:%M')}</b><br>🔺 Max: {mx:.1f} (S-{mxn})<br>⚪ Ort: {mn:.1f}<br>🔻 Min: {mi:.1f} (S-{minn})" for t, mx, mxn, mn, mi, minn in zip(time, max_val, max_mem, mean_val, min_val, min_mem)]
                             
-                            # EN YÜKSEK (Hover'da senaryo adı yazacak)
-                            fig.add_trace(go.Scatter(
-                                x=time, y=max_val, 
-                                mode='lines', 
-                                line=dict(color='green', width=2, dash='dash'), 
-                                name="EN YÜKSEK",
-                                customdata=max_members,
-                                hovertemplate="<b>En Yüksek</b><br>Değer: %{y:.1f}<br>Senaryo: %{customdata}<extra></extra>"
-                            ))
+                            # 1. Katman: Görünmez çizgi ama Hover'ı taşıyor (Tüm bilgileri içerir)
+                            fig.add_trace(go.Scatter(x=time, y=mean_val, mode='lines', line=dict(width=0), hovertemplate="%{text}<extra></extra>", text=h_txt, showlegend=False, name="Bilgi"))
                             
-                            # EN DÜŞÜK (Hover'da senaryo adı yazacak)
-                            fig.add_trace(go.Scatter(
-                                x=time, y=min_val, 
-                                mode='lines', 
-                                line=dict(color='blue', width=2, dash='dash'), 
-                                name="EN DÜŞÜK",
-                                customdata=min_members,
-                                hovertemplate="<b>En Düşük</b><br>Değer: %{y:.1f}<br>Senaryo: %{customdata}<extra></extra>"
-                            ))
+                            # 2. Katman: Görünen Ortalama Çizgisi (Tıklanamaz, sadece görsel)
+                            fig.add_trace(go.Scatter(x=time, y=mean_val, mode='lines', line=dict(color=main_c, width=3.0), name="ORTALAMA", hoverinfo='skip'))
 
                             if "Sıcaklık" in secim: fig.add_hline(y=0, line_dash="dash", line_color="orange", opacity=0.5)
                             if "Lifted Index" in secim: fig.add_hline(y=0, line_dash="solid", line_color="white", opacity=0.8)
