@@ -59,6 +59,7 @@ def get_run_info():
     
     current_minutes = hour * 60 + minute
     
+  
     if current_minutes >= (3 * 60 + 30) and current_minutes < (9 * 60 + 30):
         return "00Z (Sabah)"
     elif current_minutes >= (9 * 60 + 30) and current_minutes < (15 * 60 + 30):
@@ -154,11 +155,11 @@ with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
 
 def add_watermark(fig):
     fig.add_annotation(
-        text="KeremPalancı",
+        text="Analiz: KeremPalancı",
         xref="paper", yref="paper",
         x=0.99, y=0.01,
         showarrow=False,
-        font=dict(size=18, color="rgba(255, 255, 255, 0.5)", family="Arial"),
+        font=dict(size=12, color="rgba(255, 255, 255, 0.5)", family="Arial"),
         bgcolor="rgba(0,0,0,0.5)",
         borderpad=4
     )
@@ -208,6 +209,9 @@ def get_comparison_data(lat, lon):
     except: return None
 
 if btn_calistir:
+    
+    zaman_damgasi = datetime.now().strftime("%Y-%m-%d_%H-%M")
+
     if calisma_modu == "📉 GFS Senaryoları (Diyagram)":
         if not secilen_veriler: st.error("Lütfen en az bir veri seçin.")
         else:
@@ -255,7 +259,24 @@ if btn_calistir:
                                 hovermode="x unified", legend=dict(orientation="h", y=1, x=1)
                             )
                             fig = add_watermark(fig)
-                            st.plotly_chart(fig, use_container_width=True)
+                            
+                         
+                            temiz_isim = secim.replace(" ", "_").replace("(", "").replace(")", "")
+                            dosya_adi = f"{location_name}_{temiz_isim}_{zaman_damgasi}"
+                            
+                            st.plotly_chart(
+                                fig, 
+                                use_container_width=True,
+                                config={
+                                    'toImageButtonOptions': {
+                                        'format': 'png',
+                                        'filename': dosya_adi,
+                                        'height': 700,
+                                        'width': 1200,
+                                        'scale': 2
+                                    }
+                                }
+                            )
                 else:
                     st.error("Veri alınamadı.")
 
@@ -295,7 +316,24 @@ if btn_calistir:
                         height=600
                     )
                     fig = add_watermark(fig)
-                    st.plotly_chart(fig, use_container_width=True)
+                    
+               
+                    temiz_isim = savas_parametresi.replace(" ", "_").replace("(", "").replace(")", "")
+                    dosya_adi = f"{location_name}_KIYASLAMA_{temiz_isim}_{zaman_damgasi}"
+                    
+                    st.plotly_chart(
+                        fig, 
+                        use_container_width=True,
+                        config={
+                            'toImageButtonOptions': {
+                                'format': 'png',
+                                'filename': dosya_adi,
+                                'height': 700,
+                                'width': 1200,
+                                'scale': 2
+                            }
+                        }
+                    )
                     
                 except Exception as e:
                     st.error(f"Grafik çizilirken hata oldu: {e}")
