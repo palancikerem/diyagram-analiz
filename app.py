@@ -22,7 +22,6 @@ st.markdown("""
 
 st.title("Meteorolojik Analiz Sistemi - KeremPalancı")
 
-
 TR_ILLER = {
     "İstanbul": [41.00, 28.97], "Ankara": [39.93, 32.85], "İzmir": [38.42, 27.14],
     "Adana": [37.00, 35.32], "Adıyaman": [37.76, 38.28], "Afyonkarahisar": [38.75, 30.54],
@@ -75,11 +74,8 @@ def search_location(query):
     except:
         return []
 
-
 with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
-   
     tab1, tab2 = st.tabs(["Listeden Seç", "🔍 Konum Ara (Tüm İlçeler)"])
-    
     selected_lat, selected_lon, location_name = 41.00, 28.97, "İstanbul"
 
     with tab1:
@@ -92,7 +88,6 @@ with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
         col_search, col_res = st.columns([2, 2])
         with col_search:
             arama_sorgusu = st.text_input("İlçe/Konum Yaz (Örn: Alanya)", placeholder="İlçe adı girin...")
-        
         with col_res:
             if arama_sorgusu:
                 sonuclar = search_location(arama_sorgusu)
@@ -107,14 +102,22 @@ with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
                 st.info("Aramak için yazın.")
 
     st.divider()
-    
-   
+
     calisma_modu = st.radio("Analiz Modu Seçin:", ["📉 GFS Senaryoları (Diyagram)", "Model Kıyaslama (GFS vs ICON vs GEM)"], horizontal=True)
 
-   
     secilen_veriler = []
     vurgulu_senaryolar = []
-    savas_parametresi = "Sıcaklık (2m)" 
+    
+    COMPARISON_MAP = {
+        "Sıcaklık (2m)": {"api": "temperature_2m", "unit": "°C"},
+        "Sıcaklık (850hPa)": {"api": "temperature_850hPa", "unit": "°C"},
+        "Yağış (mm)": {"api": "precipitation", "unit": "mm"},
+        "Rüzgar Hızı (10m)": {"api": "windspeed_10m", "unit": "km/s"},
+        "Basınç (hPa)": {"api": "pressure_msl", "unit": "hPa"},
+        "Bulutluluk (%)": {"api": "cloudcover", "unit": "%"},
+        "Jeopotansiyel Yükseklik (500hPa)": {"api": "geopotential_height_500hPa", "unit": "m"}
+    }
+    savas_parametresi = "Sıcaklık (2m)"
 
     if calisma_modu == "📉 GFS Senaryoları (Diyagram)":
         secilen_veriler = st.multiselect(
@@ -130,28 +133,16 @@ with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
             default=["Sıcaklık (850hPa)", "Yağış (mm)"]
         )
         vurgulu_senaryolar = st.multiselect("Senaryo Vurgula", options=range(0, 31))
-    
 
-    elif calisma_modu == " Model Kıyaslama (GFS vs ICON vs GEM)":
+    elif calisma_modu == "Model Kıyaslama (GFS vs ICON vs GEM)":
         savas_parametresi = st.selectbox(
             "Hangi veriyi kapıştıralım?",
-            [
-                "Sıcaklık (2m)", 
-                "Sıcaklık (850hPa)", 
-                "Yağış (mm)",
-                "Rüzgar Hızı (km/s)",
-                "Basınç (hPa)",
-                "Bulutluluk (%)",
-                "Jeopotansiyel Yükseklik (500hPa)"
-            ]
+            list(COMPARISON_MAP.keys())
         )
-
 
     st.caption(f"📅 Model Run: **{get_run_info()}**")
     btn_calistir = st.button("ANALİZİ BAŞLAT", type="primary", use_container_width=True)
     st.caption(f"Seçili Konum: **{location_name}** ({selected_lat:.2f}, {selected_lon:.2f})")
-
-
 
 @st.cache_data(ttl=3600)
 def get_ensemble_data(lat, lon, variables):
@@ -182,9 +173,7 @@ def get_ensemble_data(lat, lon, variables):
 
 @st.cache_data(ttl=3600)
 def get_comparison_data(lat, lon):
-
-    variables = "temperature_2m,temperature_850hPa,precipitation,wind_speed_10m,pressure_msl,cloud_cover,geopotential_height_500hPa"
-    
+    variables = "temperature_2m,temperature_850hPa,precipitation,windspeed_10m,pressure_msl,cloudcover,geopotential_height_500hPa"
     url = "https://api.open-meteo.com/v1/forecast"
     params = {
         "latitude": lat,
@@ -198,12 +187,8 @@ def get_comparison_data(lat, lon):
         return r.json()
     except: return None
 
-
-
 if btn_calistir:
-    
- 
-    if calisma_modu == " GFS Senaryoları (Diyagram)":
+    if calisma_modu == "📉 GFS Senaryoları (Diyagram)":
         if not secilen_veriler: st.error("Lütfen en az bir veri seçin.")
         else:
             with st.spinner(f'{location_name} için diyagramlar oluşturuluyor...'):
@@ -253,7 +238,6 @@ if btn_calistir:
                 else:
                     st.error("Veri alınamadı.")
 
-    
     elif calisma_modu == "Model Kıyaslama (GFS vs ICON vs GEM)":
         with st.spinner(f'{location_name} için modeller kıyaslanıyor...'):
             veri = get_comparison_data(selected_lat, selected_lon)
@@ -263,32 +247,14 @@ if btn_calistir:
                     hourly = veri['hourly']
                     zaman = pd.to_datetime(hourly['time'])
                     
-                  
-                    api_key = "temperature_2m"
-                    unit = "°C"
-                    
-                    if savas_parametresi == "Sıcaklık (850hPa)":
-                        api_key = "temperature_850hPa"
-                        unit = "°C"
-                    elif savas_parametresi == "Yağış (mm)":
-                        api_key = "precipitation"
-                        unit = "mm"
-                    elif savas_parametresi == "Rüzgar Hızı (10m)":
-                        api_key = "wind_speed_10m"
-                        unit = "km/s"
-                    elif savas_parametresi == "Basınç ":
-                        api_key = "pressure_msl"
-                        unit = "hPa"
-                    elif savas_parametresi == "Bulutluluk (%)":
-                        api_key = "cloud_cover"
-                        unit = "%"
-
-               
+                    secilen_bilgi = COMPARISON_MAP[savas_parametresi]
+                    api_key = secilen_bilgi["api"]
+                    unit = secilen_bilgi["unit"]
+                
                     temp_gfs = hourly.get(f'{api_key}_gfs_seamless', [])
                     temp_icon = hourly.get(f'{api_key}_icon_seamless', [])
                     temp_gem = hourly.get(f'{api_key}_gem_global', [])
                     
-                 
                     fig = go.Figure()
                     
                     if temp_gfs:
@@ -309,10 +275,7 @@ if btn_calistir:
                     )
                     st.plotly_chart(fig, use_container_width=True)
                     
-                   
-                    
                 except Exception as e:
                     st.error(f"Grafik çizilirken hata oldu: {e}")
-                    st.write("Debug Verisi:", veri.keys())
             else:
                 st.error("Model verisi çekilemedi.")
