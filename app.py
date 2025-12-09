@@ -136,7 +136,7 @@ with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
 
     elif calisma_modu == "Model Kıyaslama (GFS vs ICON vs GEM)":
         savas_parametresi = st.selectbox(
-            "Hangi veriyi kapıştıralım?",
+            "Veri Seçiniz...",
             list(COMPARISON_MAP.keys())
         )
 
