@@ -55,10 +55,18 @@ TR_ILLER = {
 def get_run_info():
     now_utc = datetime.now(timezone.utc)
     hour = now_utc.hour
-    if 3 <= hour < 9: return "00Z (Sabah)"
-    elif 9 <= hour < 15: return "06Z (Öğle)"
-    elif 15 <= hour < 21: return "12Z (Akşam)"
-    else: return "18Z (Gece)"
+    minute = now_utc.minute
+    
+    current_minutes = hour * 60 + minute
+    
+    if current_minutes >= (3 * 60 + 30) and current_minutes < (9 * 60 + 30):
+        return "00Z (Sabah)"
+    elif current_minutes >= (9 * 60 + 30) and current_minutes < (15 * 60 + 30):
+        return "06Z (Öğle)"
+    elif current_minutes >= (15 * 60 + 30) and current_minutes < (21 * 60 + 30):
+        return "12Z (Akşam)"
+    else:
+        return "18Z (Gece)"
 
 @st.cache_data
 def search_location(query):
@@ -136,13 +144,25 @@ with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
 
     elif calisma_modu == "Model Kıyaslama (GFS vs ICON vs GEM)":
         savas_parametresi = st.selectbox(
-            "Veri Seçiniz...",
+            "Hangi veriyi kapıştıralım?",
             list(COMPARISON_MAP.keys())
         )
 
-    st.caption(f"📅 Model Run: **{get_run_info()}**")
+    st.caption(f"📅 Sistemdeki Run: **{get_run_info()}**")
     btn_calistir = st.button("ANALİZİ BAŞLAT", type="primary", use_container_width=True)
     st.caption(f"Seçili Konum: **{location_name}** ({selected_lat:.2f}, {selected_lon:.2f})")
+
+def add_watermark(fig):
+    fig.add_annotation(
+        text="Analiz: KeremPalancı",
+        xref="paper", yref="paper",
+        x=0.99, y=0.01,
+        showarrow=False,
+        font=dict(size=12, color="rgba(255, 255, 255, 0.5)", family="Arial"),
+        bgcolor="rgba(0,0,0,0.5)",
+        borderpad=4
+    )
+    return fig
 
 @st.cache_data(ttl=3600)
 def get_ensemble_data(lat, lon, variables):
@@ -234,6 +254,7 @@ if btn_calistir:
                                 margin=dict(l=2, r=2, t=30, b=5), 
                                 hovermode="x unified", legend=dict(orientation="h", y=1, x=1)
                             )
+                            fig = add_watermark(fig)
                             st.plotly_chart(fig, use_container_width=True)
                 else:
                     st.error("Veri alınamadı.")
@@ -273,6 +294,7 @@ if btn_calistir:
                         legend=dict(orientation="h", y=1.1),
                         height=600
                     )
+                    fig = add_watermark(fig)
                     st.plotly_chart(fig, use_container_width=True)
                     
                 except Exception as e:
