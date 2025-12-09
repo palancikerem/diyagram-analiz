@@ -299,7 +299,7 @@ if btn_calistir:
                         fig.add_trace(go.Scatter(x=zaman, y=temp_gem, mode='lines', name='GEM', line=dict(color='blue', width=3, dash='dash')))
                     
                     fig.update_layout(
-                        title=dict(text=f"⚔️ Model Kapışması: {location_name} - {savas_parametresi}", font=dict(size=16)),
+                        title=dict(text=f"Model Kıyaslaması: {location_name} - {savas_parametresi}", font=dict(size=16)),
                         template="plotly_dark",
                         xaxis_title="Tarih",
                         yaxis_title=f"Değer ({unit})",
