@@ -154,11 +154,11 @@ with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
 
 def add_watermark(fig):
     fig.add_annotation(
-        text="Analiz: KeremPalancı",
+        text="KeremPalancı",
         xref="paper", yref="paper",
         x=0.99, y=0.01,
         showarrow=False,
-        font=dict(size=12, color="rgba(255, 255, 255, 0.5)", family="Arial"),
+        font=dict(size=18, color="rgba(255, 255, 255, 0.5)", family="Arial"),
         bgcolor="rgba(0,0,0,0.5)",
         borderpad=4
     )
