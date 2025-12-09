@@ -5,7 +5,7 @@ import plotly.graph_objects as go
 from datetime import datetime, timezone
 
 st.set_page_config(
-    page_title="MeteoAnaliz - KeremPalancı", 
+    page_title="KeremPalancı - Diyagram", 
     layout="wide", 
     initial_sidebar_state="collapsed"
 )
@@ -145,7 +145,7 @@ with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
 
     elif calisma_modu == "Model Kıyaslama (GFS vs ICON vs GEM)":
         savas_parametresi = st.selectbox(
-            "Hangi veriyi kapıştıralım?",
+            "Veri Seçiniz...",
             list(COMPARISON_MAP.keys())
         )
 
