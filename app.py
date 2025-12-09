@@ -238,11 +238,9 @@ if btn_calistir:
                             max_val = df_m.max(axis=1)
                             min_val = df_m.min(axis=1)
                             
-                            # Hangi üyenin max ve min olduğunu bulma
                             max_mem = df_m.idxmax(axis=1).apply(lambda x: x.split('member')[1] if 'member' in x else '?')
                             min_mem = df_m.idxmin(axis=1).apply(lambda x: x.split('member')[1] if 'member' in x else '?')
                             
-                            # Üyeleri çizdirme (Gri Arkaplan)
                             for member in cols:
                                 try: mem_num = int(member.split('member')[1])
                                 except: mem_num = -1
@@ -255,19 +253,16 @@ if btn_calistir:
                                 
                                 fig.add_trace(go.Scatter(x=time, y=df_m[member], mode='lines', line=dict(color=c, width=w), opacity=o, name=f"S-{mem_num}", showlegend=leg, hoverinfo=h))
                             
-                            # Renk Haritası
                             c_map = {"850hPa": "red", "500hPa": "#00BFFF", "2m": "orange", "Kar": "white", "Yağış": "cyan", "LI": "#DC143C"}
                             main_c = next((v for k, v in c_map.items() if k in secim), "cyan")
                             
-                            # --- TEK HOVER KUTUSU MANTIĞI (Senin istediğin kısım) ---
-                            # Hover için özel metin listesi hazırlıyoruz
+                          
                             h_txt = [f"📅 <b>{t.strftime('%d.%m %H:%M')}</b><br>🔺 Max: {mx:.1f} (S-{mxn})<br>⚪ Ort: {mn:.1f}<br>🔻 Min: {mi:.1f} (S-{minn})" for t, mx, mxn, mn, mi, minn in zip(time, max_val, max_mem, mean_val, min_val, min_mem)]
                             
-                            # 1. Katman: Görünmez çizgi ama Hover'ı taşıyor (Tüm bilgileri içerir)
+
                             fig.add_trace(go.Scatter(x=time, y=mean_val, mode='lines', line=dict(width=0), hovertemplate="%{text}<extra></extra>", text=h_txt, showlegend=False, name="Bilgi"))
                             
-                            # 2. Katman: Görünen Ortalama Çizgisi (Tıklanamaz, sadece görsel)
-                            fig.add_trace(go.Scatter(x=time, y=mean_val, mode='lines', line=dict(color=main_c, width=3.0), name="ORTALAMA", hoverinfo='skip'))
+                            fig.add_trace(go.Scatter(x=time, y=mean_val, mode='lines', line=dict(color=main_c, width=3.0), name="ORTALAMA", showlegend=False, hoverinfo='skip'))
 
                             if "Sıcaklık" in secim: fig.add_hline(y=0, line_dash="dash", line_color="orange", opacity=0.5)
                             if "Lifted Index" in secim: fig.add_hline(y=0, line_dash="solid", line_color="white", opacity=0.8)
@@ -348,8 +343,8 @@ if btn_calistir:
                             'toImageButtonOptions': {
                                 'format': 'png',
                                 'filename': dosya_adi,
-                                'height': 700,
-                                'width': 1200,
+                                'height': 720,
+                                'width': 1280,
                                 'scale': 2
                             }
                         }
