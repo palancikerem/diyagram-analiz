@@ -235,8 +235,17 @@ if btn_calistir:
                             if secim == "Kar Kalınlığı (cm)": df_m = df_m * 100
                             
                             mean_val = df_m.mean(axis=1)
-                            max_val = df_m.max(axis=1) # EKLENDİ
-                            min_val = df_m.min(axis=1) # EKLENDİ
+                            max_val = df_m.max(axis=1)
+                            min_val = df_m.min(axis=1)
+                            
+                            # Max ve Min senaryolarının isimlerini (Member ID) bulma
+                            # Örn: temperature_2m_gfs_seamless_member12 -> S-12
+                            def get_mem_name(col_name):
+                                try: return f"S-{int(col_name.split('member')[1])}"
+                                except: return "S-?"
+
+                            max_members = df_m.idxmax(axis=1).apply(get_mem_name)
+                            min_members = df_m.idxmin(axis=1).apply(get_mem_name)
                             
                             for member in cols:
                                 try: mem_num = int(member.split('member')[1])
@@ -252,10 +261,28 @@ if btn_calistir:
                             
                             c_map = {"850hPa": "red", "500hPa": "#00BFFF", "2m": "orange", "Kar": "white", "Yağış": "cyan", "LI": "#DC143C"}
                             main_c = next((v for k, v in c_map.items() if k in secim), "cyan")
-                   
+                            
                             fig.add_trace(go.Scatter(x=time, y=mean_val, mode='lines', line=dict(color=main_c, width=3.0), name="ORTALAMA"))
-                            fig.add_trace(go.Scatter(x=time, y=max_val, mode='lines', line=dict(color='green', width=2, dash='dash'), name="EN YÜKSEK"))
-                            fig.add_trace(go.Scatter(x=time, y=min_val, mode='lines', line=dict(color='blue', width=2, dash='dash'), name="EN DÜŞÜK"))
+                            
+                            # EN YÜKSEK (Hover'da senaryo adı yazacak)
+                            fig.add_trace(go.Scatter(
+                                x=time, y=max_val, 
+                                mode='lines', 
+                                line=dict(color='green', width=2, dash='dash'), 
+                                name="EN YÜKSEK",
+                                customdata=max_members,
+                                hovertemplate="<b>En Yüksek</b><br>Değer: %{y:.1f}<br>Senaryo: %{customdata}<extra></extra>"
+                            ))
+                            
+                            # EN DÜŞÜK (Hover'da senaryo adı yazacak)
+                            fig.add_trace(go.Scatter(
+                                x=time, y=min_val, 
+                                mode='lines', 
+                                line=dict(color='blue', width=2, dash='dash'), 
+                                name="EN DÜŞÜK",
+                                customdata=min_members,
+                                hovertemplate="<b>En Düşük</b><br>Değer: %{y:.1f}<br>Senaryo: %{customdata}<extra></extra>"
+                            ))
 
                             if "Sıcaklık" in secim: fig.add_hline(y=0, line_dash="dash", line_color="orange", opacity=0.5)
                             if "Lifted Index" in secim: fig.add_hline(y=0, line_dash="solid", line_color="white", opacity=0.8)
@@ -267,7 +294,7 @@ if btn_calistir:
                                 hovermode="x unified", legend=dict(orientation="h", y=1, x=1)
                             )
                             fig = add_watermark(fig)
-                          
+                            
                             clean_type = clean_filename(secim)
                             dosya_adi = f"{clean_loc}_{clean_type}_{zaman_damgasi}"
                             
