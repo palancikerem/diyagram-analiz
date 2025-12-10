@@ -86,6 +86,37 @@ def search_location(query):
     except:
         return []
 
+# NOAA Veri Çekme Fonksiyonu
+@st.cache_data(ttl=86400)
+def get_climate_index(url):
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        
+        lines = response.text.split('\n')
+        data = []
+        
+        for line in lines:
+            parts = line.split()
+            if not parts: continue
+            
+            if parts[0].isdigit() and 1940 < int(parts[0]) < 2030:
+                year = int(parts[0])
+                for month_idx, value in enumerate(parts[1:]):
+                    if month_idx < 12: 
+                        try:
+                            val = float(value)
+                            if val < -90: val = None 
+                            date_str = f"{year}-{month_idx+1:02d}-01"
+                            data.append({"Tarih": date_str, "Değer": val})
+                        except: continue
+
+        df = pd.DataFrame(data)
+        df['Tarih'] = pd.to_datetime(df['Tarih'])
+        return df.dropna()
+    except:
+        return None
+
 with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
     tab1, tab2 = st.tabs(["Listeden Seç", "🔍 Konum Ara (Tüm İlçeler)"])
     selected_lat, selected_lon, location_name = 41.00, 28.97, "İstanbul"
@@ -115,7 +146,12 @@ with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
 
     st.divider()
 
-    calisma_modu = st.radio("Analiz Modu Seçin:", ["📉 GFS Senaryoları (Diyagram)", "Model Kıyaslama (GFS vs ICON vs GEM)"], horizontal=True)
+    # YENİ MOD EKLENDİ
+    calisma_modu = st.radio("Analiz Modu Seçin:", [
+        "📉 GFS Senaryoları (Diyagram)", 
+        "Model Kıyaslama (GFS vs ICON vs GEM)",
+        "🌍 Küresel Endeksler (ENSO, NAO, vb.)"
+    ], horizontal=True)
 
     secilen_veriler = []
     vurgulu_senaryolar = []
@@ -129,7 +165,19 @@ with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
         "Bulutluluk (%)": {"api": "cloudcover", "unit": "%"},
         "Jeopotansiyel Yükseklik (500hPa)": {"api": "geopotential_height_500hPa", "unit": "m"}
     }
+    
+    INDEX_URLS = {
+        "ENSO (Niño 3.4)": "https://psl.noaa.gov/data/correlation/nina34.data",
+        "NAO (Kuzey Atlantik Salınımı)": "https://psl.noaa.gov/data/correlation/nao.data",
+        "AO (Arktik Salınımı)": "https://psl.noaa.gov/data/correlation/ao.data",
+        "IOD (Hint Okyanusu Dipolü)": "https://psl.noaa.gov/data/correlation/dmi.data",
+        "QBO (Quasi-Biennial Oscillation)": "https://psl.noaa.gov/data/correlation/qbo.data",
+        "SOI (Southern Oscillation Index)": "https://psl.noaa.gov/data/correlation/soi.data"
+    }
+
     savas_parametresi = "Sıcaklık (2m)"
+    secilen_endeks = "ENSO (Niño 3.4)"
+    yil_araligi = 5
 
     if calisma_modu == "📉 GFS Senaryoları (Diyagram)":
         secilen_veriler = st.multiselect(
@@ -151,10 +199,20 @@ with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
             "Veri Seçiniz...",
             list(COMPARISON_MAP.keys())
         )
+    
+    elif calisma_modu == "🌍 Küresel Endeksler (ENSO, NAO, vb.)":
+        col_i1, col_i2 = st.columns([1,1])
+        with col_i1:
+            secilen_endeks = st.selectbox("Endeks Seçin:", list(INDEX_URLS.keys()))
+        with col_i2:
+            yil_araligi = st.slider("Son Kaç Yıl?", 1, 50, 5)
 
     st.caption(f"📅 Sistemdeki Run: **{get_run_info()}**")
     btn_calistir = st.button("ANALİZİ BAŞLAT", type="primary", use_container_width=True)
-    st.caption(f"Seçili Konum: **{location_name}** ({selected_lat:.2f}, {selected_lon:.2f})")
+    
+    # Endeks modunda konum bilgisi gereksiz ama layout bozulmasın diye bırakıyoruz
+    if calisma_modu != "🌍 Küresel Endeksler (ENSO, NAO, vb.)":
+        st.caption(f"Seçili Konum: **{location_name}** ({selected_lat:.2f}, {selected_lon:.2f})")
 
 def add_watermark(fig):
     fig.add_annotation(
@@ -256,12 +314,9 @@ if btn_calistir:
                             c_map = {"850hPa": "red", "500hPa": "#00BFFF", "2m": "orange", "Kar": "white", "Yağış": "cyan", "LI": "#DC143C"}
                             main_c = next((v for k, v in c_map.items() if k in secim), "cyan")
                             
-                          
                             h_txt = [f"📅 <b>{t.strftime('%d.%m %H:%M')}</b><br>🔺 Max: {mx:.1f} (S-{mxn})<br>⚪ Ort: {mn:.1f}<br>🔻 Min: {mi:.1f} (S-{minn})" for t, mx, mxn, mn, mi, minn in zip(time, max_val, max_mem, mean_val, min_val, min_mem)]
                             
-
                             fig.add_trace(go.Scatter(x=time, y=mean_val, mode='lines', line=dict(width=0), hovertemplate="%{text}<extra></extra>", text=h_txt, showlegend=False, name="Bilgi"))
-                            
                             fig.add_trace(go.Scatter(x=time, y=mean_val, mode='lines', line=dict(color=main_c, width=3.0), name="ORTALAMA", showlegend=False, hoverinfo='skip'))
 
                             if "Sıcaklık" in secim: fig.add_hline(y=0, line_dash="dash", line_color="orange", opacity=0.5)
@@ -354,3 +409,71 @@ if btn_calistir:
                     st.error(f"Grafik çizilirken hata oldu: {e}")
             else:
                 st.error("Model verisi çekilemedi.")
+    
+    elif calisma_modu == "🌍 Küresel Endeksler (ENSO, NAO, vb.)":
+        if secilen_endeks:
+            url = INDEX_URLS[secilen_endeks]
+            with st.spinner(f"{secilen_endeks} verisi NOAA sunucularından çekiliyor..."):
+                df_index = get_climate_index(url)
+                
+                if df_index is not None and not df_index.empty:
+                    # Seçilen yıla göre filtrele
+                    start_date = datetime.now() - pd.DateOffset(years=yil_araligi)
+                    df_filtered = df_index[df_index['Tarih'] >= start_date]
+                    
+                    if not df_filtered.empty:
+                        son_veri = df_filtered.iloc[-1]
+                        son_tarih = son_veri['Tarih'].strftime("%B %Y")
+                        son_deger = son_veri['Değer']
+                        
+                        # Renklendirme
+                        colors = ['#FF4B4B' if v >= 0 else '#1E90FF' for v in df_filtered['Değer']]
+                        
+                        fig = go.Figure()
+                        fig.add_trace(go.Bar(
+                            x=df_filtered['Tarih'], 
+                            y=df_filtered['Değer'],
+                            marker_color=colors,
+                            name=secilen_endeks
+                        ))
+                        
+                        fig.update_layout(
+                            title=f"<b>{secilen_endeks}</b> - Son Durum: {son_deger} ({son_tarih})",
+                            yaxis_title="Anomali / Değer",
+                            template="plotly_dark",
+                            height=500,
+                            margin=dict(l=20, r=20, t=40, b=20)
+                        )
+                        fig.add_hline(y=0, line_color="white", line_width=1)
+                        fig = add_watermark(fig)
+
+                        # İndirme Ayarları
+                        clean_type = clean_filename(secilen_endeks.split(" (")[0])
+                        dosya_adi = f"KURESEL_ENDEKS_{clean_type}_{zaman_damgasi}"
+
+                        st.plotly_chart(
+                            fig, 
+                            use_container_width=True,
+                            config={
+                                'displayModeBar': True,
+                                'toImageButtonOptions': {
+                                    'format': 'png',
+                                    'filename': dosya_adi,
+                                    'height': 720,
+                                    'width': 1280,
+                                    'scale': 2
+                                }
+                            }
+                        )
+                        
+                        # Bilgi Kutuları
+                        if "ENSO" in secilen_endeks:
+                            st.info("ℹ️ **ENSO (Niño 3.4):** +0.5 üzeri **El Niño** (Isınma), -0.5 altı **La Niña** (Soğuma) fazıdır.")
+                        elif "NAO" in secilen_endeks:
+                            st.info("ℹ️ **NAO:** Negatif fazda kutup soğuklarının Avrupa/Türkiye hattına inme ihtimali artar.")
+                        elif "IOD" in secilen_endeks:
+                            st.info("ℹ️ **IOD:** Pozitif faz, Doğu Afrika ve Türkiye çevresinde yağış artışını destekleyebilir.")
+                    else:
+                        st.warning("Seçilen tarih aralığında veri bulunamadı.")
+                else:
+                    st.error("Veri çekilirken bir hata oluştu veya NOAA sunucusu yanıt vermiyor.")
