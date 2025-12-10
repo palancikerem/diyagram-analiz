@@ -6,7 +6,7 @@ from datetime import datetime, timezone, timedelta
 import io
 import warnings
 
-# SSL sertifika hatalarını görmezden gel (NOAA sunucuları için şart)
+# SSL sertifika hatalarını görmezden gel
 warnings.filterwarnings("ignore")
 
 st.set_page_config(
@@ -81,44 +81,10 @@ def search_location(query):
         return []
     except: return []
 
-# --- SAĞLAMLAŞTIRILMIŞ VERİ ÇEKME MOTORU ---
-
-@st.cache_data(ttl=86400)
-def fetch_robust_daily(url):
-    """AO ve NAO günlük verilerini CPC'den çeker."""
-    try:
-        # User-Agent ekleyerek robot engelini aş
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-        response = requests.get(url, headers=headers, verify=False, timeout=15)
-        response.raise_for_status()
-        
-        # Pandas ile "whitespace" (boşluk) ayırıcı kullanarak oku
-        df = pd.read_csv(
-            io.StringIO(response.text), 
-            sep=r'\s+', 
-            header=None, 
-            on_bad_lines='skip',
-            engine='python'
-        )
-        
-        # Sütunları düzelt (Yıl, Ay, Gün, Değer)
-        df = df.iloc[:, :4]
-        df.columns = ['Year', 'Month', 'Day', 'Value']
-        
-        # Sayı olmayan satırları temizle
-        df = df[pd.to_numeric(df['Year'], errors='coerce').notnull()]
-        
-        # Tarih formatına çevir
-        df['Tarih'] = pd.to_datetime(df[['Year', 'Month', 'Day']])
-        df['Değer'] = df['Value'].astype(float)
-        
-        return df[['Tarih', 'Değer']]
-    except Exception as e:
-        return None
-
+# --- AYLIK VERİ ÇEKME MOTORU (ENSO / QBO) ---
 @st.cache_data(ttl=86400)
 def fetch_robust_monthly(url):
-    """ENSO ve IOD gibi aylık matris verilerini çeker."""
+    """NOAA metin dosyalarından aylık verileri çeker."""
     try:
         headers = {'User-Agent': 'Mozilla/5.0'}
         response = requests.get(url, headers=headers, verify=False, timeout=15)
@@ -179,11 +145,11 @@ with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
 
     st.divider()
 
-    # MODLAR
+    # MODLAR (SADELEŞTİRİLDİ)
     calisma_modu = st.radio("Analiz Modu Seçin:", [
         "📉 GFS Senaryoları (Diyagram)", 
         "Model Kıyaslama (GFS vs ICON vs GEM)",
-        "🌍 Küresel Endeksler & Tahminler (AO, NAO, IOD...)"
+        "🌍 Küresel Endeksler (ENSO Anomali, QBO)"
     ], horizontal=True)
 
     secilen_veriler = []
@@ -199,40 +165,15 @@ with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
         "Jeopotansiyel Yükseklik (500hPa)": {"api": "geopotential_height_500hPa", "unit": "m"}
     }
     
-    # KONFIGURASYON: GÜNLÜK VE AYLIK İÇİN EN SAĞLAM LİNKLER
-    # AO/NAO için CPC'nin düz metin dosyaları en iyisidir.
-    # Tahmin (Forecast) için direkt NOAA Resimlerini kullanacağız.
+    # SADECE ENSO (ANOMALİ) VE QBO KALDI
+    # ENSO URL değiştirildi: nina34.anom.data (Anomali verisi)
     INDEX_CONFIG = {
-        "AO (Arktik Salınımı)": {
-            "type": "daily",
-            "url": "https://www.cpc.ncep.noaa.gov/products/precip/CWlink/daily_ao_index/ao.dat",
-            "forecast_img": "https://www.cpc.ncep.noaa.gov/products/precip/CWlink/daily_ao_index/ao.sprd2.gif"
-        },
-        "NAO (Kuzey Atlantik)": {
-            "type": "daily",
-            "url": "https://www.cpc.ncep.noaa.gov/products/precip/CWlink/pna/nao.dat",
-            "forecast_img": "https://www.cpc.ncep.noaa.gov/products/precip/CWlink/pna/nao.sprd2.gif"
-        },
-        "ENSO (El Niño/La Niña)": {
-            "type": "monthly",
-            "url": "https://psl.noaa.gov/data/correlation/nina34.data",
-            "info": "NOAA PSL Verisi"
-        },
-        "IOD (Hint Okyanusu Dipolü)": {
-            "type": "monthly",
-            "url": "https://psl.noaa.gov/data/correlation/dmi.data",
-            "info": "NOAA DMI Verisi"
-        },
-        "QBO (Quasi-Biennial)": {
-            "type": "monthly",
-            "url": "https://psl.noaa.gov/data/correlation/qbo.data",
-            "info": "Stratospheric Wind"
-        }
+        "ENSO (Niño 3.4 Anomali)": {"url": "https://psl.noaa.gov/data/correlation/nina34.anom.data"},
+        "QBO (Quasi-Biennial)": {"url": "https://psl.noaa.gov/data/correlation/qbo.data"}
     }
 
     savas_parametresi = "Sıcaklık (2m)"
-    secilen_endeks = "AO (Arktik Salınımı)"
-    gun_araligi = 365
+    secilen_endeks = "ENSO (Niño 3.4 Anomali)"
     yil_araligi = 5
 
     if calisma_modu == "📉 GFS Senaryoları (Diyagram)":
@@ -240,20 +181,17 @@ with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
         vurgulu_senaryolar = st.multiselect("Senaryo Vurgula", options=range(0, 31))
     elif calisma_modu == "Model Kıyaslama (GFS vs ICON vs GEM)":
         savas_parametresi = st.selectbox("Veri Seçiniz...", list(COMPARISON_MAP.keys()))
-    elif calisma_modu == "🌍 Küresel Endeksler & Tahminler (AO, NAO, IOD...)":
+    elif calisma_modu == "🌍 Küresel Endeksler (ENSO Anomali, QBO)":
         col_i1, col_i2 = st.columns([1,1])
         with col_i1: 
             secilen_endeks = st.selectbox("Endeks Seçin:", list(INDEX_CONFIG.keys()))
         with col_i2:
-            if INDEX_CONFIG[secilen_endeks]["type"] == "daily":
-                gun_araligi = st.slider("Geçmiş Veri Aralığı (Gün)", 30, 730, 365)
-            else:
-                yil_araligi = st.slider("Geçmiş Veri Aralığı (Yıl)", 1, 30, 5)
+            yil_araligi = st.slider("Geçmiş Veri Aralığı (Yıl)", 1, 30, 5)
 
     st.caption(f"📅 Sistemdeki Run: **{get_run_info()}**")
     btn_calistir = st.button("ANALİZİ BAŞLAT", type="primary", use_container_width=True)
     
-    if calisma_modu != "🌍 Küresel Endeksler & Tahminler (AO, NAO, IOD...)":
+    if calisma_modu != "🌍 Küresel Endeksler (ENSO Anomali, QBO)":
         st.caption(f"Seçili Konum: **{location_name}** ({selected_lat:.2f}, {selected_lon:.2f})")
 
 def add_watermark(fig):
@@ -334,67 +272,53 @@ if btn_calistir:
                 st.plotly_chart(fig, use_container_width=True, config={'toImageButtonOptions': {'format': 'png', 'filename': f'KIYAS_{clean_loc}_{zaman_damgasi}', 'scale': 2}})
             else: st.error("Model verisi çekilemedi.")
     
-    # --- 3. MOD: KÜRESEL ENDEKSLER (GÜNLÜK & AYLIK) ---
-    elif calisma_modu == "🌍 Küresel Endeksler & Tahminler (AO, NAO, IOD...)":
+    # --- 3. MOD: ENSO (ANOMALİ) VE QBO ---
+    elif calisma_modu == "🌍 Küresel Endeksler (ENSO Anomali, QBO)":
         config = INDEX_CONFIG[secilen_endeks]
         url = config["url"]
-        is_daily = config["type"] == "daily"
         
-        with st.spinner(f"{secilen_endeks} verisi çekiliyor..."):
-            df = None
-            if is_daily:
-                df = fetch_robust_daily(url)
-            else:
-                df = fetch_robust_monthly(url)
+        with st.spinner(f"{secilen_endeks} verisi NOAA'dan çekiliyor..."):
+            df = fetch_robust_monthly(url)
                 
             if df is not None and not df.empty:
                 # Tarih Filtreleme
-                start_date = None
-                if is_daily:
-                    start_date = datetime.now() - timedelta(days=gun_araligi)
-                else:
-                    start_date = datetime.now() - pd.DateOffset(years=yil_araligi)
-                
+                start_date = datetime.now() - pd.DateOffset(years=yil_araligi)
                 df_filtered = df[df['Tarih'] >= start_date]
                 
                 if not df_filtered.empty:
                     fig = go.Figure()
                     
-                    if is_daily:
-                        # GÜNLÜK: Çizgi + Alan (Bar)
-                        fig.add_trace(go.Scatter(x=df_filtered['Tarih'], y=df_filtered['Değer'], mode='lines', line=dict(color='white', width=1), name=secilen_endeks))
-                        fig.add_trace(go.Bar(x=df_filtered['Tarih'], y=df_filtered['Değer'], marker_color=['#FF4B4B' if x >= 0 else '#1E90FF' for x in df_filtered['Değer']], opacity=0.8))
-                    else:
-                        # AYLIK: Sadece Bar
-                        fig.add_trace(go.Bar(x=df_filtered['Tarih'], y=df_filtered['Değer'], marker_color=['#FF4B4B' if x >= 0 else '#1E90FF' for x in df_filtered['Değer']], name=secilen_endeks))
+                    # Renklendirme
+                    colors = ['#FF4B4B' if x >= 0 else '#1E90FF' for x in df_filtered['Değer']]
+                    
+                    # AYLIK: Sadece Bar
+                    fig.add_trace(go.Bar(
+                        x=df_filtered['Tarih'], y=df_filtered['Değer'],
+                        marker_color=colors,
+                        name=secilen_endeks
+                    ))
 
                     son_deger = df_filtered.iloc[-1]['Değer']
-                    son_tarih = df_filtered.iloc[-1]['Tarih'].strftime("%d %B %Y")
+                    son_tarih = df_filtered.iloc[-1]['Tarih'].strftime("%B %Y")
                     
-                    fig.update_layout(title=f"<b>{secilen_endeks}</b> - Son Durum: {son_deger} ({son_tarih})", template="plotly_dark", height=500, showlegend=False)
+                    fig.update_layout(title=f"<b>{secilen_endeks}</b> - Son: {son_deger} ({son_tarih})", template="plotly_dark", height=500, showlegend=False)
+                    fig.add_hline(y=0, line_color="white", line_width=1)
                     fig = add_watermark(fig)
+                    
+                    # ENSO için özel eşik çizgileri
+                    if "ENSO" in secilen_endeks:
+                        fig.add_hline(y=0.5, line_dash="dash", line_color="red", annotation_text="El Niño (+0.5)")
+                        fig.add_hline(y=-0.5, line_dash="dash", line_color="blue", annotation_text="La Niña (-0.5)")
                     
                     clean_type = clean_filename(secilen_endeks.split(" (")[0])
                     dosya_adi = f"ENDEKS_{clean_type}_{zaman_damgasi}"
 
                     st.plotly_chart(fig, use_container_width=True, config={'toImageButtonOptions': {'format': 'png', 'filename': dosya_adi, 'scale': 2}})
                     
-                    # --- TAHMİN (FORECAST) GÖMME ---
-                    # Sadece AO ve NAO için tahmin resmi vardır
-                    if is_daily and "forecast_img" in config:
-                        st.divider()
-                        st.subheader(f"🔮 {secilen_endeks.split('(')[0]} 14 Günlük GEFS Tahmini (Resmi NOAA)")
-                        # Cache'i bozmak için linkin sonuna rastgele sayı ekliyoruz
-                        img_url = f"{config['forecast_img']}?t={datetime.now().timestamp()}"
-                        
-                        st.image(
-                            img_url, 
-                            caption=f"Kaynak: NOAA CPC (Canlı Veri) - {datetime.now().strftime('%Y-%m-%d')}", 
-                            use_container_width=True
-                        )
-                        st.info("👆 Bu grafik NOAA sunucularından anlık çekilmektedir. Kırmızı çizgiler GEFS senaryolarını, siyah çizgi ortalamayı gösterir.")
+                    if "ENSO" in secilen_endeks:
+                        st.info("ℹ️ **Bilgi:** Grafikteki değerler su sıcaklığı değil, **Anomali (Sapma)** değeridir. **+0.5** üzeri El Niño, **-0.5** altı La Niña bölgesidir.")
 
                 else:
                     st.warning("Seçilen tarih aralığı için veri yok.")
             else:
-                st.error("Veri çekilemedi. NOAA sunucusu yanıt vermiyor olabilir veya dosya formatı değişmiş.")
+                st.error("Veri çekilemedi. NOAA sunucusu yanıt vermiyor olabilir.")
