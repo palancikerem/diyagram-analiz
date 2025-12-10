@@ -135,6 +135,7 @@ with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
 
     st.divider()
 
+    # --- MOD SEÇİMİ ---
     calisma_modu = st.radio("Analiz Modu Seçin:", [
         "📉 GFS Senaryoları (Diyagram)", 
         "Model Kıyaslama (GFS vs ICON vs GEM)",
@@ -179,12 +180,12 @@ with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
         with col_i2:
             yil_araligi = st.slider("Geçmiş Veri Aralığı (Yıl)", 1, 30, 5)
             
-    elif calisma_modu == "🗺️ Özel Model Haritaları (WRF/ECMWF)":
-        st.info("ℹ️ Bu bölümde sistem yöneticisinin yüklediği özel model çıktıları görüntülenir.")
+    elif calisma_modu == "WRF d01 9km - d02 3km":
+        st.info("ℹ️ Bu bölümde sizin yüklediğiniz model haritaları görüntülenir.")
 
     st.caption(f"📅 Sistemdeki Run: **{get_run_info()}**")
     
-    if calisma_modu != "🗺️ Özel Model Haritaları (WRF/ECMWF)":
+    if calisma_modu != "WRF d01 9km - d02 3km":
         btn_calistir = st.button("ANALİZİ BAŞLAT", type="primary", use_container_width=True)
     
     if calisma_modu not in ["🌍 Küresel Endeksler (ENSO Anomali, QBO)", "🗺️ Özel Model Haritaları (WRF/ECMWF)"]:
@@ -212,16 +213,14 @@ def get_comparison_data(lat, lon):
 
 # --- ÇALIŞTIRMA KISMI ---
 
-# 4. MOD: ÖZEL HARİTA OYNATICI (KLASÖRDEN OKUMA)
+# 4. MOD: ÖZEL HARİTA OYNATICI (KLASÖRDEN OKUMA - DÜZELTİLDİ)
 if calisma_modu == "🗺️ Özel Model Haritaları (WRF/ECMWF)":
     
-    # Resimlerin olduğu klasör adı
-    MAP_FOLDER = 'wrf_haritalar'
+    # SENİN İÇİN DÜZELTİLEN KISIM BURASI:
+    MAP_FOLDER = '.devcontainer/wrf_haritalar'
     
-    # Klasör yoksa veya boşsa uyarı ver
     if not os.path.exists(MAP_FOLDER) or not os.listdir(MAP_FOLDER):
         st.warning(f"⚠️ '{MAP_FOLDER}' klasörü bulunamadı veya içi boş.")
-        st.write("👉 **Yönetici Notu:** GitHub projesinde `wrf_haritalar` isminde bir klasör oluşturun ve harita resimlerini (png/jpg) oraya yükleyin.")
     else:
         # Klasördeki resimleri listele ve isme göre sırala
         map_files = sorted([f for f in os.listdir(MAP_FOLDER) if f.endswith(('.png', '.jpg', '.jpeg'))])
