@@ -165,6 +165,8 @@ with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
         "Jeopotansiyel Yükseklik (500hPa)": {"api": "geopotential_height_500hPa", "unit": "m"}
     }
     
+    # SADECE ENSO (ANOMALİ) VE QBO KALDI
+    # ENSO URL değiştirildi: nina34.anom.data (Anomali verisi)
     INDEX_CONFIG = {
         "ENSO (Niño 3.4 Anomali)": {"url": "https://psl.noaa.gov/data/correlation/nina34.anom.data"},
         "QBO (Quasi-Biennial)": {"url": "https://psl.noaa.gov/data/correlation/qbo.data"}
@@ -192,8 +194,21 @@ with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
     if calisma_modu != "🌍 Küresel Endeksler (ENSO Anomali, QBO)":
         st.caption(f"Seçili Konum: **{location_name}** ({selected_lat:.2f}, {selected_lon:.2f})")
 
+# --- WATERMARK (FİLİGRAN) FONKSİYONU ---
 def add_watermark(fig):
-    fig.add_annotation(text="Analiz: KeremPalancı", xref="paper", yref="paper", x=0.99, y=0.01, showarrow=False, font=dict(size=12, color="rgba(255, 255, 255, 0.5)", family="Arial"), bgcolor="rgba(0,0,0,0.5)", borderpad=4)
+    fig.add_annotation(
+        text="Analiz: KeremPalancı",
+        xref="paper", yref="paper",
+        x=0.99, y=0.01, # Sağ alt köşe
+        showarrow=False,
+        font=dict(
+            size=12,
+            color="rgba(255, 255, 255, 0.5)", # Yarı saydam beyaz
+            family="Arial"
+        ),
+        bgcolor="rgba(0,0,0,0.5)", # Yarı saydam siyah arka plan
+        borderpad=4
+    )
     return fig
 
 @st.cache_data(ttl=3600)
@@ -245,14 +260,20 @@ if btn_calistir:
                             main_c = next((v for k, v in c_map.items() if k in secim), "cyan")
                             h_txt = [f"📅 <b>{t.strftime('%d.%m %H:%M')}</b><br>🔺 Max: {mx:.1f} (S-{mxn})<br>⚪ Ort: {mn:.1f}<br>🔻 Min: {mi:.1f} (S-{minn})" for t, mx, mxn, mn, mi, minn in zip(time, max_val, max_mem, mean_val, min_val, min_mem)]
                             
-                            # DÜZELTİLEN SATIR: width=0 yerine line=dict(width=0)
                             fig.add_trace(go.Scatter(x=time, y=mean_val, mode='lines', line=dict(width=0), hovertemplate="%{text}<extra></extra>", text=h_txt, showlegend=False, name="Bilgi"))
                             fig.add_trace(go.Scatter(x=time, y=mean_val, mode='lines', line=dict(color=main_c, width=3.0), name="ORTALAMA", showlegend=False, hoverinfo='skip'))
                             
                             if "Sıcaklık" in secim: fig.add_hline(y=0, line_dash="dash", line_color="orange", opacity=0.5)
+                            
                             fig.update_layout(title=f"{location_name} - {secim}", template="plotly_dark", height=500, margin=dict(l=2, r=2, t=30, b=5), hovermode="x unified")
+                            
+                            # FİLİGRAN EKLE
                             fig = add_watermark(fig)
-                            st.plotly_chart(fig, use_container_width=True, config={'toImageButtonOptions': {'format': 'png', 'filename': f'{clean_loc}_{secim}_{zaman_damgasi}', 'height': 720, 'width': 1280, 'scale': 2}})
+                            
+                            # PNG İNDİRME AYARLARI
+                            clean_type = clean_filename(secim)
+                            dosya_adi = f"{clean_loc}_{clean_type}_{zaman_damgasi}"
+                            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': dosya_adi, 'height': 720, 'width': 1280, 'scale': 2}})
                 else: st.error("Veri alınamadı.")
 
     # --- 2. MOD: KIYASLAMA ---
@@ -268,9 +289,16 @@ if btn_calistir:
                 for mod, c in [('gfs_seamless', 'red'), ('icon_seamless', 'green'), ('gem_global', 'blue')]:
                     if f'{api_key}_{mod}' in hourly:
                         fig.add_trace(go.Scatter(x=zaman, y=hourly[f'{api_key}_{mod}'], mode='lines', name=mod.split('_')[0].upper(), line=dict(color=c, width=2)))
+                
                 fig.update_layout(title=f"{location_name} - {savas_parametresi}", template="plotly_dark", height=500, hovermode="x unified", legend=dict(orientation="h", y=1.1))
+                
+                # FİLİGRAN EKLE
                 fig = add_watermark(fig)
-                st.plotly_chart(fig, use_container_width=True, config={'toImageButtonOptions': {'format': 'png', 'filename': f'KIYAS_{clean_loc}_{zaman_damgasi}', 'scale': 2}})
+                
+                # PNG İNDİRME AYARLARI
+                clean_type = clean_filename(savas_parametresi)
+                dosya_adi = f"KIYAS_{clean_loc}_{clean_type}_{zaman_damgasi}"
+                st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': dosya_adi, 'height': 720, 'width': 1280, 'scale': 2}})
             else: st.error("Model verisi çekilemedi.")
     
     # --- 3. MOD: ENSO (ANOMALİ) VE QBO ---
@@ -282,43 +310,34 @@ if btn_calistir:
             df = fetch_robust_monthly(url)
                 
             if df is not None and not df.empty:
-                # Tarih Filtreleme
                 start_date = datetime.now() - pd.DateOffset(years=yil_araligi)
                 df_filtered = df[df['Tarih'] >= start_date]
                 
                 if not df_filtered.empty:
                     fig = go.Figure()
-                    
-                    # Renklendirme
                     colors = ['#FF4B4B' if x >= 0 else '#1E90FF' for x in df_filtered['Değer']]
-                    
-                    # AYLIK: Sadece Bar
-                    fig.add_trace(go.Bar(
-                        x=df_filtered['Tarih'], y=df_filtered['Değer'],
-                        marker_color=colors,
-                        name=secilen_endeks
-                    ))
+                    fig.add_trace(go.Bar(x=df_filtered['Tarih'], y=df_filtered['Değer'], marker_color=colors, name=secilen_endeks))
 
                     son_deger = df_filtered.iloc[-1]['Değer']
                     son_tarih = df_filtered.iloc[-1]['Tarih'].strftime("%B %Y")
                     
                     fig.update_layout(title=f"<b>{secilen_endeks}</b> - Son: {son_deger} ({son_tarih})", template="plotly_dark", height=500, showlegend=False)
                     fig.add_hline(y=0, line_color="white", line_width=1)
-                    fig = add_watermark(fig)
                     
-                    # ENSO için özel eşik çizgileri
                     if "ENSO" in secilen_endeks:
                         fig.add_hline(y=0.5, line_dash="dash", line_color="red", annotation_text="El Niño (+0.5)")
                         fig.add_hline(y=-0.5, line_dash="dash", line_color="blue", annotation_text="La Niña (-0.5)")
                     
+                    # FİLİGRAN EKLE
+                    fig = add_watermark(fig)
+                    
+                    # PNG İNDİRME AYARLARI
                     clean_type = clean_filename(secilen_endeks.split(" (")[0])
                     dosya_adi = f"ENDEKS_{clean_type}_{zaman_damgasi}"
-
-                    st.plotly_chart(fig, use_container_width=True, config={'toImageButtonOptions': {'format': 'png', 'filename': dosya_adi, 'scale': 2}})
+                    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': dosya_adi, 'height': 720, 'width': 1280, 'scale': 2}})
                     
                     if "ENSO" in secilen_endeks:
                         st.info("ℹ️ **Bilgi:** Grafikteki değerler su sıcaklığı değil, **Anomali (Sapma)** değeridir. **+0.5** üzeri El Niño, **-0.5** altı La Niña bölgesidir.")
-
                 else:
                     st.warning("Seçilen tarih aralığı için veri yok.")
             else:
