@@ -85,14 +85,11 @@ def fetch_robust_monthly(url):
     try:
         headers = {'User-Agent': 'Mozilla/5.0'}
         response = requests.get(url, headers=headers, verify=False, timeout=15)
-        
         data = []
         lines = response.text.split('\n')
-        
         for line in lines:
             parts = line.split()
             if not parts: continue
-            
             if parts[0].isdigit() and 1940 < int(parts[0]) < 2030:
                 year = int(parts[0])
                 for i in range(12):
@@ -100,16 +97,25 @@ def fetch_robust_monthly(url):
                         try:
                             val = float(parts[i+1])
                             if val < -50: val = None 
-                            
                             if val is not None:
-                                data.append({
-                                    "Tarih": datetime(year, i+1, 1), 
-                                    "Değer": val
-                                })
+                                data.append({"Tarih": datetime(year, i+1, 1), "Değer": val})
                         except: continue
-        
         if not data: return None
         return pd.DataFrame(data)
+    except: return None
+
+# RESİMLERİ GÜVENLİ ÇEKME FONKSİYONU (HOTLINK KORUMASINI AŞAR)
+@st.cache_data(ttl=3600)
+def fetch_image_bytes(url):
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Referer': 'https://www.cpc.ncep.noaa.gov/'
+        }
+        r = requests.get(url, headers=headers, verify=False, timeout=10)
+        if r.status_code == 200:
+            return r.content
+        return None
     except: return None
 
 with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
@@ -143,7 +149,7 @@ with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
         "📉 GFS Senaryoları (Diyagram)", 
         "Model Kıyaslama (GFS vs ICON vs GEM)",
         "🌍 Küresel Endeksler (ENSO Anomali, QBO)",
-        "🌀 MJO Analizi & Uydu (OLR, Vel. Pot.)"
+        "🌀 MJO Analizi (Salyangoz, OLR, VP200)"
     ], horizontal=True)
 
     secilen_veriler = []
@@ -183,7 +189,7 @@ with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
     st.caption(f"📅 Sistemdeki Run: **{get_run_info()}**")
     btn_calistir = st.button("ANALİZİ BAŞLAT", type="primary", use_container_width=True)
     
-    if calisma_modu not in ["🌍 Küresel Endeksler (ENSO Anomali, QBO)", "🌀 MJO Analizi & Uydu (OLR, Vel. Pot.)"]:
+    if calisma_modu not in ["🌍 Küresel Endeksler (ENSO Anomali, QBO)", "🌀 MJO Analizi (Salyangoz, OLR, VP200)"]:
         st.caption(f"Seçili Konum: **{location_name}** ({selected_lat:.2f}, {selected_lon:.2f})")
 
 def add_watermark(fig):
@@ -293,31 +299,59 @@ if btn_calistir:
                 else: st.warning("Seçilen tarih aralığı için veri yok.")
             else: st.error("Veri çekilemedi. NOAA sunucusu yanıt vermiyor olabilir.")
 
-    elif calisma_modu == "🌀 MJO Analizi & Uydu (OLR, Vel. Pot.)":
-        tab_mjo, tab_sat = st.tabs(["🌀 MJO & OLR Haritaları", "🛰️ Canlı Uydu & Radar"])
+    elif calisma_modu == "🌀 MJO Analizi (Salyangoz, OLR, VP200)":
         
-        with tab_mjo:
-            st.subheader("MJO Faz Diyagramı & OLR Anomalisi")
-            st.write("MJO'nun küresel konumunu ve yağış potansiyelini (OLR) gösteren NOAA GFS Tahminleri.")
+        st.subheader("MJO Analiz Haritaları (NOAA CPC)")
+        st.write("Madden-Julian Salınımı (MJO) küresel yağış ve sıcaklık döngülerini etkiler. Aşağıdaki haritalar NOAA sunucularından anlık olarak çekilmektedir.")
+        st.caption("Not: Eğer haritalar boş görünürse NOAA sunucularında güncelleme yapılıyor olabilir.")
+
+        ts = datetime.now().strftime("%Y%m%d%H") 
+        
+        col_m1, col_m2 = st.columns(2)
+        
+        # MJO PHASE DIAGRAM
+        with col_m1:
+            st.markdown("#### 1. MJO Faz Diyagramı (Salyangoz)")
+            url_phase = "https://www.cpc.ncep.noaa.gov/products/precip/CWlink/MJO/forecasts/gefs_phase_20.gif"
+            img_bytes = fetch_image_bytes(url_phase)
+            if img_bytes:
+                st.image(img_bytes, caption="Kaynak: NOAA CPC - GEFS RMM", use_container_width=True)
+            else:
+                st.error("Görüntü çekilemedi (NOAA Kaynaklı)")
             
-            ts = datetime.now().timestamp()
-            col_m1, col_m2 = st.columns(2)
-            
-            with col_m1:
-                st.write("**1. GFS MJO Faz Diyagramı (Salyangoz)**")
-                st.image(f"https://www.cpc.ncep.noaa.gov/products/precip/CWlink/MJO/forecasts/gefs_phase_20.gif?t={ts}", caption="Kaynak: NOAA CPC - GEFS RMM Forecast", use_container_width=True)
-                st.info("Daire dışına taşan çizgiler MJO'nun aktif olduğunu gösterir. Renkli çizgiler önümüzdeki 14 günlük tahmindir.")
+            st.info("""
+            **Nasıl Okunur?**
+            * **Daire İçi:** MJO Etkisiz (Nötr)
+            * **Daire Dışı:** MJO Aktif
+            * **Faz 2-3:** Hint Okyanusu (Türkiye'ye yağış desteği verebilir)
+            * **Faz 8-1:** Batı Yarıküre/Afrika
+            """)
+
+        # OLR ANOMALY
+        with col_m2:
+            st.markdown("#### 2. OLR Anomalisi (Yağış Tahmini)")
+            url_olr = "https://www.cpc.ncep.noaa.gov/products/precip/CWlink/MJO/forcast/gfs_olr_anom_7day.gif"
+            img_bytes_olr = fetch_image_bytes(url_olr)
+            if img_bytes_olr:
+                st.image(img_bytes_olr, caption="Kaynak: NOAA CPC - OLR Forecast", use_container_width=True)
+            else:
+                st.error("Görüntü çekilemedi (NOAA Kaynaklı)")
                 
-            with col_m2:
-                st.write("**2. OLR Anomalisi (Yağış Tahmini)**")
-                st.image(f"https://www.cpc.ncep.noaa.gov/products/precip/CWlink/MJO/forcast/gfs_olr_anom_7day.gif?t={ts}", caption="Kaynak: NOAA CPC - OLR Anomaly Forecast", use_container_width=True)
-                st.info("🔵 **Mavi:** Bulutlu/Yağışlı (Konveksiyon) | 🔴 **Kırmızı:** Açık/Kurak (Baskılanma)")
+            st.info("""
+            **OLR (Giden Uzun Dalga Radyasyonu):**
+            * 🔵 **Mavi:** Bulutlu, Konvektif, Yağışlı (Aktif MJO)
+            * 🔴 **Kırmızı:** Açık hava, Kurak, Baskılanmış (Pasif MJO)
+            """)
 
-            st.divider()
-            st.write("**3. 200hPa Velocity Potential (Üst Seviye Iraksama)**")
-            st.image(f"https://www.cpc.ncep.noaa.gov/products/precip/CWlink/MJO/forcast/gfs_chi200_anom_7day.gif?t={ts}", caption="CHI200 Anomaly - NOAA CPC", use_container_width=True)
-            st.info("🟢 **Yeşil/Mavi:** Üst seviyede ıraksama (Yerde Alçak Basınç/Yağış desteği).")
-
-        with tab_sat:
-            st.subheader("Canlı Küresel Uydu & Radar (RainViewer)")
-            st.components.v1.iframe("https://www.rainviewer.com/map.html?loc=39.0,35.0,5&oFa=0&oC=1&oU=0&oCS=1&oF=0&oAP=1&c=3&o=83&lm=1&layer=radar&sm=1&sn=1", height=650, scrolling=False)
+        st.divider()
+        
+        # CHI200 (VELOCITY POTENTIAL)
+        st.markdown("#### 3. 200hPa Velocity Potential (Üst Seviye Iraksama)")
+        url_vp = "https://www.cpc.ncep.noaa.gov/products/precip/CWlink/MJO/forcast/gfs_chi200_anom_7day.gif"
+        img_bytes_vp = fetch_image_bytes(url_vp)
+        if img_bytes_vp:
+            st.image(img_bytes_vp, caption="Kaynak: NOAA CPC - CHI200 Anomaly", use_container_width=True)
+        else:
+            st.error("Görüntü çekilemedi (NOAA Kaynaklı)")
+            
+        st.success("🟢 **Yeşil/Mavi Alanlar:** Atmosferin üst seviyesinde hava dışarı yayılıyor (Iraksama). Bu, yer seviyesinde havanın yükselmesini ve **Alçak Basınç/Yağış** oluşumunu destekler.")
