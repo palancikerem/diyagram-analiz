@@ -165,8 +165,6 @@ with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
         "Jeopotansiyel Yükseklik (500hPa)": {"api": "geopotential_height_500hPa", "unit": "m"}
     }
     
-    # SADECE ENSO (ANOMALİ) VE QBO KALDI
-    # ENSO URL değiştirildi: nina34.anom.data (Anomali verisi)
     INDEX_CONFIG = {
         "ENSO (Niño 3.4 Anomali)": {"url": "https://psl.noaa.gov/data/correlation/nina34.anom.data"},
         "QBO (Quasi-Biennial)": {"url": "https://psl.noaa.gov/data/correlation/qbo.data"}
@@ -246,8 +244,11 @@ if btn_calistir:
                             c_map = {"850hPa": "red", "2m": "orange", "Kar": "white", "Yağış": "cyan", "Basınç": "magenta"}
                             main_c = next((v for k, v in c_map.items() if k in secim), "cyan")
                             h_txt = [f"📅 <b>{t.strftime('%d.%m %H:%M')}</b><br>🔺 Max: {mx:.1f} (S-{mxn})<br>⚪ Ort: {mn:.1f}<br>🔻 Min: {mi:.1f} (S-{minn})" for t, mx, mxn, mn, mi, minn in zip(time, max_val, max_mem, mean_val, min_val, min_mem)]
-                            fig.add_trace(go.Scatter(x=time, y=mean_val, mode='lines', width=0, hovertemplate="%{text}<extra></extra>", text=h_txt, showlegend=False, name="Bilgi"))
+                            
+                            # DÜZELTİLEN SATIR: width=0 yerine line=dict(width=0)
+                            fig.add_trace(go.Scatter(x=time, y=mean_val, mode='lines', line=dict(width=0), hovertemplate="%{text}<extra></extra>", text=h_txt, showlegend=False, name="Bilgi"))
                             fig.add_trace(go.Scatter(x=time, y=mean_val, mode='lines', line=dict(color=main_c, width=3.0), name="ORTALAMA", showlegend=False, hoverinfo='skip'))
+                            
                             if "Sıcaklık" in secim: fig.add_hline(y=0, line_dash="dash", line_color="orange", opacity=0.5)
                             fig.update_layout(title=f"{location_name} - {secim}", template="plotly_dark", height=500, margin=dict(l=2, r=2, t=30, b=5), hovermode="x unified")
                             fig = add_watermark(fig)
