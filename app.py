@@ -4,6 +4,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import numpy as np
 from datetime import datetime, timezone, timedelta
+import io
 
 st.set_page_config(
     page_title="MeteoAnaliz - KeremPalancı", 
@@ -77,9 +78,9 @@ def search_location(query):
         return []
     except: return []
 
-# --- NOAA VERİ ÇEKME ---
+# --- NOAA AYLIK VERİ ÇEKME (ENSO, QBO vb.) ---
 @st.cache_data(ttl=86400)
-def get_climate_index(url):
+def get_monthly_index(url):
     try:
         response = requests.get(url, timeout=10)
         response.raise_for_status()
@@ -103,29 +104,67 @@ def get_climate_index(url):
         return df.dropna()
     except: return None
 
-# --- MJO/GWO FAZ VERİSİ ÇEKME ---
+# --- NOAA GÜNLÜK VERİ ÇEKME (AO, NAO) ---
+@st.cache_data(ttl=86400)
+def get_daily_index(url):
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        
+        # NOAA Günlük Verileri: YIL AY GÜN DEĞER formatındadır
+        data = []
+        lines = response.text.split('\n')
+        
+        for line in lines:
+            parts = line.split()
+            # En az 4 sütun olmalı (Yıl, Ay, Gün, Değer)
+            if len(parts) >= 4 and parts[0].isdigit():
+                try:
+                    year = int(parts[0])
+                    month = int(parts[1])
+                    day = int(parts[2])
+                    val = float(parts[3])
+                    
+                    # 2000'den öncesini almayalım performans için
+                    if year >= 2000:
+                        current_date = datetime(year, month, day)
+                        data.append({"Tarih": current_date, "Değer": val})
+                except: continue
+                
+        df = pd.DataFrame(data)
+        df['Tarih'] = pd.to_datetime(df['Tarih'])
+        return df
+    except Exception as e:
+        return None
+
+# --- MJO/GWO FAZ VERİSİ ÇEKME (DÜZELTİLDİ) ---
 @st.cache_data(ttl=3600)
 def get_phase_data():
-    # BOM (Avustralya) MJO Verisi - En temiz ve stabil kaynak
     url = "http://www.bom.gov.au/climate/mjo/graphics/rmm.74toRealtime.txt"
     try:
         r = requests.get(url, timeout=10)
-        lines = r.text.split('\n')
-        data = []
-        for line in lines:
-            parts = line.split()
-            if len(parts) >= 7 and parts[0].isdigit(): # Yıl ile başlayan satırlar
-                try:
-                    year, month, day = int(parts[0]), int(parts[1]), int(parts[2])
-                    rmm1 = float(parts[3])
-                    rmm2 = float(parts[4])
-                    # 2024 ve sonrası verileri alalım (Performans için)
-                    if year >= 2024:
-                        date = datetime(year, month, day)
-                        data.append({"Tarih": date, "RMM1": rmm1, "RMM2": rmm2})
-                except: continue
-        return pd.DataFrame(data)
-    except: return None
+        r.raise_for_status()
+        
+        # Pandas ile daha sağlam okuma (skiprows=2 başlık satırlarını atlar)
+        # Sütunlar genelde: Year, Month, Day, RMM1, RMM2, Phase, Amplitude, Source
+        df = pd.read_csv(
+            io.StringIO(r.text), 
+            sep=r'\s+',  # Boşluklarla ayrılmış
+            skiprows=2, 
+            header=None,
+            names=["Year", "Month", "Day", "RMM1", "RMM2", "Phase", "Amp", "Source"],
+            on_bad_lines='skip'
+        )
+        
+        # Tarih sütunu oluştur
+        df['Tarih'] = pd.to_datetime(df[['Year', 'Month', 'Day']])
+        
+        # Sadece son yılları al
+        df = df[df['Year'] >= 2024]
+        
+        return df[['Tarih', 'RMM1', 'RMM2']]
+    except Exception as e:
+        return None
 
 with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
     tab1, tab2 = st.tabs(["Listeden Seç", "🔍 Konum Ara (Tüm İlçeler)"])
@@ -154,7 +193,7 @@ with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
 
     st.divider()
 
-    # YENİ MOD: FAZ DİYAGRAMLARI EKLENDİ
+    # MODLAR
     calisma_modu = st.radio("Analiz Modu Seçin:", [
         "📉 GFS Senaryoları (Diyagram)", 
         "Model Kıyaslama (GFS vs ICON vs GEM)",
@@ -164,6 +203,7 @@ with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
 
     secilen_veriler = []
     vurgulu_senaryolar = []
+    
     COMPARISON_MAP = {
         "Sıcaklık (2m)": {"api": "temperature_2m", "unit": "°C"},
         "Sıcaklık (850hPa)": {"api": "temperature_850hPa", "unit": "°C"},
@@ -173,16 +213,27 @@ with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
         "Bulutluluk (%)": {"api": "cloudcover", "unit": "%"},
         "Jeopotansiyel Yükseklik (500hPa)": {"api": "geopotential_height_500hPa", "unit": "m"}
     }
-    INDEX_URLS = {
+    
+    # AYLIK ENDEKSLER (URL'leri aynı kaldı)
+    MONTHLY_URLS = {
         "ENSO (Niño 3.4)": "https://psl.noaa.gov/data/correlation/nina34.data",
-        "NAO (Kuzey Atlantik Salınımı)": "https://psl.noaa.gov/data/correlation/nao.data",
-        "AO (Arktik Salınımı)": "https://psl.noaa.gov/data/correlation/ao.data",
         "IOD (Hint Okyanusu Dipolü)": "https://psl.noaa.gov/data/correlation/dmi.data",
         "QBO": "https://psl.noaa.gov/data/correlation/qbo.data",
     }
+    
+    # GÜNLÜK ENDEKSLER (NOAA CPC Daily)
+    DAILY_URLS = {
+        "AO (Arktik Salınımı) - GÜNLÜK": "https://www.cpc.ncep.noaa.gov/products/precip/CWlink/daily_ao_index/ao.dat",
+        "NAO (Kuzey Atlantik) - GÜNLÜK": "https://www.cpc.ncep.noaa.gov/products/precip/CWlink/pna/nao.dat"
+    }
+
+    # Hepsini tek listede birleştirelim seçtirmek için
+    ALL_INDEXES = list(DAILY_URLS.keys()) + list(MONTHLY_URLS.keys())
+
     savas_parametresi = "Sıcaklık (2m)"
-    secilen_endeks = "ENSO (Niño 3.4)"
-    yil_araligi = 5
+    secilen_endeks = "AO (Arktik Salınımı) - GÜNLÜK"
+    gun_araligi = 365 # Günlük veriler için varsayılan
+    yil_araligi = 5   # Aylık veriler için varsayılan
     faz_gun_sayisi = 40
 
     if calisma_modu == "📉 GFS Senaryoları (Diyagram)":
@@ -190,10 +241,17 @@ with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
         vurgulu_senaryolar = st.multiselect("Senaryo Vurgula", options=range(0, 31))
     elif calisma_modu == "Model Kıyaslama (GFS vs ICON vs GEM)":
         savas_parametresi = st.selectbox("Veri Seçiniz...", list(COMPARISON_MAP.keys()))
+    
     elif calisma_modu == "🌍 Küresel Endeksler (ENSO, NAO, vb.)":
         col_i1, col_i2 = st.columns([1,1])
-        with col_i1: secilen_endeks = st.selectbox("Endeks Seçin:", list(INDEX_URLS.keys()))
-        with col_i2: yil_araligi = st.slider("Son Kaç Yıl?", 1, 50, 5)
+        with col_i1: 
+            secilen_endeks = st.selectbox("Endeks Seçin:", ALL_INDEXES)
+        with col_i2: 
+            if "GÜNLÜK" in secilen_endeks:
+                gun_araligi = st.slider("Son Kaç Gün?", 30, 730, 365)
+            else:
+                yil_araligi = st.slider("Son Kaç Yıl?", 1, 50, 5)
+
     elif calisma_modu == "🌀 Faz Diyagramları (MJO / GWO)":
         st.info("⚠️ GWO ham verisi şu an sunucularda stabil değil. Aşağıdaki grafik **MJO** verisidir ancak mantık (Phase Space) GWO ile birebir aynıdır.")
         faz_gun_sayisi = st.slider("Son Kaç Günün Hareketi Gösterilsin?", 10, 90, 40)
@@ -207,7 +265,6 @@ def add_watermark(fig):
 
 @st.cache_data(ttl=3600)
 def get_ensemble_data(lat, lon, variables):
-    # (Önceki fonksiyonun aynısı - Yer kaplamasın diye kısalttım ama kodda tam olmalı)
     var_map = {"Sıcaklık (850hPa)": "temperature_850hPa", "Sıcaklık (2m)": "temperature_2m", "Kar Yağışı (cm)": "snowfall", "Yağış (mm)": "precipitation", "Rüzgar (10m)": "windspeed_10m", "Basınç": "pressure_msl"}
     api_vars = [var_map.get(v, "temperature_2m") for v in variables]
     try:
@@ -244,6 +301,9 @@ if btn_calistir:
                             if "Kar" in secim: df_m = df_m * 100
                             mean_val, max_val, min_val = df_m.mean(axis=1), df_m.max(axis=1), df_m.min(axis=1)
                             
+                            max_mem = df_m.idxmax(axis=1).apply(lambda x: x.split('member')[1] if 'member' in x else '?')
+                            min_mem = df_m.idxmin(axis=1).apply(lambda x: x.split('member')[1] if 'member' in x else '?')
+
                             for member in cols:
                                 try: mem_num = int(member.split('member')[1])
                                 except: mem_num = -1
@@ -254,10 +314,13 @@ if btn_calistir:
                             c_map = {"850hPa": "red", "2m": "orange", "Kar": "white", "Yağış": "cyan", "Basınç": "magenta"}
                             main_c = next((v for k, v in c_map.items() if k in secim), "cyan")
                             
-                            h_txt = [f"📅 {t.strftime('%d.%m %H:%M')}<br>🔺 Max: {mx:.1f}<br>⚪ Ort: {mn:.1f}<br>🔻 Min: {mi:.1f}" for t, mx, mn, mi in zip(time, max_val, mean_val, min_val)]
+                            h_txt = [f"📅 <b>{t.strftime('%d.%m %H:%M')}</b><br>🔺 Max: {mx:.1f} (S-{mxn})<br>⚪ Ort: {mn:.1f}<br>🔻 Min: {mi:.1f} (S-{minn})" for t, mx, mxn, mn, mi, minn in zip(time, max_val, max_mem, mean_val, min_val, min_mem)]
+                            
                             fig.add_trace(go.Scatter(x=time, y=mean_val, mode='lines', width=0, hovertemplate="%{text}<extra></extra>", text=h_txt, showlegend=False))
                             fig.add_trace(go.Scatter(x=time, y=mean_val, mode='lines', line=dict(color=main_c, width=3.0), showlegend=False, hoverinfo='skip'))
                             
+                            if "Sıcaklık" in secim: fig.add_hline(y=0, line_dash="dash", line_color="orange", opacity=0.5)
+
                             fig.update_layout(title=f"{location_name} - {secim}", template="plotly_dark", height=500, margin=dict(l=2, r=2, t=30, b=5), hovermode="x unified")
                             fig = add_watermark(fig)
                             st.plotly_chart(fig, use_container_width=True, config={'toImageButtonOptions': {'format': 'png', 'filename': f'{clean_loc}_{secim}_{zaman_damgasi}', 'height': 720, 'width': 1280, 'scale': 2}})
@@ -281,91 +344,98 @@ if btn_calistir:
                 fig = add_watermark(fig)
                 st.plotly_chart(fig, use_container_width=True, config={'toImageButtonOptions': {'format': 'png', 'filename': f'KIYAS_{clean_loc}_{zaman_damgasi}', 'scale': 2}})
 
-    # --- 3. MOD: KÜRESEL ENDEKSLER ---
+    # --- 3. MOD: KÜRESEL ENDEKSLER (GÜNLÜK VE AYLIK) ---
     elif calisma_modu == "🌍 Küresel Endeksler (ENSO, NAO, vb.)":
-        with st.spinner('NOAA verileri çekiliyor...'):
-            df = get_climate_index(INDEX_URLS[secilen_endeks])
-            if df is not None:
-                df = df[df['Tarih'] >= (datetime.now() - pd.DateOffset(years=yil_araligi))]
-                colors = ['#FF4B4B' if v >= 0 else '#1E90FF' for v in df['Değer']]
-                fig = go.Figure(go.Bar(x=df['Tarih'], y=df['Değer'], marker_color=colors))
-                fig.update_layout(title=f"{secilen_endeks}", template="plotly_dark", height=500)
-                fig.add_hline(y=0, line_color="white")
-                fig = add_watermark(fig)
-                st.plotly_chart(fig, use_container_width=True, config={'toImageButtonOptions': {'format': 'png', 'filename': f'ENDEKS_{secilen_endeks}_{zaman_damgasi}', 'scale': 2}})
-            else: st.error("Veri çekilemedi.")
+        # Hangi tipte veri seçeceğiz?
+        is_daily = "GÜNLÜK" in secilen_endeks
+        
+        with st.spinner(f"{secilen_endeks} verisi çekiliyor..."):
+            if is_daily:
+                # GÜNLÜK VERİ AKIŞI
+                url = DAILY_URLS[secilen_endeks]
+                df = get_daily_index(url)
+                if df is not None:
+                    # Son N günü al
+                    start_date = datetime.now() - timedelta(days=gun_araligi)
+                    df_filtered = df[df['Tarih'] >= start_date]
+                    
+                    if not df_filtered.empty:
+                        # Günlükte Line Chart daha iyidir
+                        fig = go.Figure()
+                        
+                        # Pozitif/Negatif dolgu
+                        fig.add_trace(go.Scatter(
+                            x=df_filtered['Tarih'], y=df_filtered['Değer'],
+                            mode='lines',
+                            line=dict(color='white', width=1),
+                            name=secilen_endeks
+                        ))
+                        
+                        # Kırmızı/Mavi Alanlar (Bar gibi ama çizgi altı)
+                        fig.add_trace(go.Bar(
+                            x=df_filtered['Tarih'], y=df_filtered['Değer'],
+                            marker_color=['#FF4B4B' if x >= 0 else '#1E90FF' for x in df_filtered['Değer']],
+                            opacity=0.8
+                        ))
 
-    # --- 4. MOD: FAZ DİYAGRAMLARI (MJO/GWO) ---
+                        son_deger = df_filtered.iloc[-1]['Değer']
+                        son_tarih = df_filtered.iloc[-1]['Tarih'].strftime("%d %B %Y")
+                        
+                        fig.update_layout(title=f"<b>{secilen_endeks}</b> - Son: {son_deger} ({son_tarih})", template="plotly_dark", height=500, showlegend=False)
+                        fig = add_watermark(fig)
+                        st.plotly_chart(fig, use_container_width=True, config={'toImageButtonOptions': {'format': 'png', 'filename': f'ENDEKS_DAILY_{secilen_endeks}_{zaman_damgasi}', 'scale': 2}})
+                    else: st.warning("Seçilen tarih aralığı için veri yok.")
+                else: st.error("NOAA Günlük verisi çekilemedi.")
+            
+            else:
+                # AYLIK VERİ AKIŞI (Eski yöntem)
+                url = MONTHLY_URLS[secilen_endeks]
+                df = get_monthly_index(url)
+                if df is not None:
+                    df = df[df['Tarih'] >= (datetime.now() - pd.DateOffset(years=yil_araligi))]
+                    colors = ['#FF4B4B' if v >= 0 else '#1E90FF' for v in df['Değer']]
+                    fig = go.Figure(go.Bar(x=df['Tarih'], y=df['Değer'], marker_color=colors))
+                    fig.update_layout(title=f"{secilen_endeks}", template="plotly_dark", height=500)
+                    fig.add_hline(y=0, line_color="white")
+                    fig = add_watermark(fig)
+                    st.plotly_chart(fig, use_container_width=True, config={'toImageButtonOptions': {'format': 'png', 'filename': f'ENDEKS_MONTHLY_{secilen_endeks}_{zaman_damgasi}', 'scale': 2}})
+                else: st.error("Veri çekilemedi.")
+
+    # --- 4. MOD: FAZ DİYAGRAMLARI (MJO) ---
     elif calisma_modu == "🌀 Faz Diyagramları (MJO / GWO)":
         with st.spinner('Faz verileri işleniyor...'):
             df_phase = get_phase_data()
-            if df_phase is not None:
+            if df_phase is not None and not df_phase.empty:
                 # Son N günü filtrele
                 df_plot = df_phase.iloc[-faz_gun_sayisi:].reset_index(drop=True)
                 
                 fig = go.Figure()
-
-                # Arkaplan Daireleri (Büyüklük = 1, 2, 3...)
                 for r in [1, 2, 3]:
                     fig.add_shape(type="circle", xref="x", yref="y", x0=-r, y0=-r, x1=r, y1=r, line_color="grey", line_dash="dot", opacity=0.3)
                 
-                # Eksen Çizgileri
                 fig.add_hline(y=0, line_color="white", opacity=0.2)
                 fig.add_vline(x=0, line_color="white", opacity=0.2)
-
-                # Bölge İsimleri (Annotations)
-                regions = [
-                    (1.5, -1.5, "Batı Pasifik"), (-1.5, -1.5, "Hint Okyanusu"),
-                    (-1.5, 1.5, "Batı Yarıküre"), (1.5, 1.5, "Afrika")
-                ]
+                
+                regions = [(1.5, -1.5, "Batı Pasifik"), (-1.5, -1.5, "Hint Okyanusu"), (-1.5, 1.5, "Batı Yarıküre"), (1.5, 1.5, "Afrika")]
                 for x, y, text in regions:
                     fig.add_annotation(x=x, y=y, text=text, showarrow=False, font=dict(size=14, color="white"), opacity=0.5)
 
-                # Renkli "Salyangoz" Çizgisi
-                # Eskiden yeniye renk değişimi için Marker kullanıyoruz
                 colors = np.linspace(0, 1, len(df_plot))
-                
-                # Çizgi (İnce)
+                fig.add_trace(go.Scatter(x=df_plot['RMM1'], y=df_plot['RMM2'], mode='lines', line=dict(color='grey', width=1), hoverinfo='skip', showlegend=False))
                 fig.add_trace(go.Scatter(
-                    x=df_plot['RMM1'], y=df_plot['RMM2'],
-                    mode='lines',
-                    line=dict(color='grey', width=1),
-                    hoverinfo='skip',
-                    showlegend=False
-                ))
-
-                # Noktalar (Renkli)
-                fig.add_trace(go.Scatter(
-                    x=df_plot['RMM1'], y=df_plot['RMM2'],
-                    mode='markers+text',
-                    marker=dict(
-                        size=10,
-                        color=colors,
-                        colorscale='Turbo', # Renk skalası (Mavi -> Kırmızı)
-                        colorbar=dict(title="Zaman (Eski -> Yeni)")
-                    ),
+                    x=df_plot['RMM1'], y=df_plot['RMM2'], mode='markers+text',
+                    marker=dict(size=10, color=colors, colorscale='Turbo', colorbar=dict(title="Zaman")),
                     text=[d.strftime('%d %b') if i % 5 == 0 or i == len(df_plot)-1 else "" for i, d in enumerate(df_plot['Tarih'])],
-                    textposition="top center",
-                    textfont=dict(color="white", size=10),
-                    name="Faz Hareketi",
+                    textposition="top center", textfont=dict(color="white", size=10),
                     hovertemplate="<b>Tarih:</b> %{text}<br>RMM1: %{x:.2f}<br>RMM2: %{y:.2f}<extra></extra>",
                     customdata=df_plot['Tarih'].dt.strftime('%d %B %Y')
                 ))
 
-                # Başlangıç ve Bitiş İşaretleri
                 fig.add_annotation(x=df_plot['RMM1'].iloc[0], y=df_plot['RMM2'].iloc[0], text="BAŞLA", ax=20, ay=20, arrowcolor="white", font=dict(color="cyan"))
                 fig.add_annotation(x=df_plot['RMM1'].iloc[-1], y=df_plot['RMM2'].iloc[-1], text="SON", ax=20, ay=20, arrowcolor="white", font=dict(color="red", size=15))
 
-                fig.update_layout(
-                    title=f"MJO Faz Diyagramı (Son {faz_gun_sayisi} Gün)",
-                    xaxis=dict(title="RMM1", range=[-4, 4], zeroline=False),
-                    yaxis=dict(title="RMM2", range=[-4, 4], zeroline=False),
-                    width=700, height=700, # Kare format önemli
-                    template="plotly_dark",
-                    showlegend=False
-                )
+                fig.update_layout(title=f"MJO Faz Diyagramı (Son {faz_gun_sayisi} Gün)", xaxis=dict(title="RMM1", range=[-4, 4]), yaxis=dict(title="RMM2", range=[-4, 4]), width=700, height=700, template="plotly_dark", showlegend=False)
                 fig = add_watermark(fig)
-                
                 st.plotly_chart(fig, use_container_width=True, config={'toImageButtonOptions': {'format': 'png', 'filename': f'MJO_PHASE_{zaman_damgasi}', 'scale': 2}})
             else:
-                st.error("Faz verisi çekilemedi.")
+                st.error("Faz verisi çekilemedi veya format hatası.")
