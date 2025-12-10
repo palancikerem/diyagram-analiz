@@ -142,7 +142,8 @@ with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
     calisma_modu = st.radio("Analiz Modu Seçin:", [
         "📉 GFS Senaryoları (Diyagram)", 
         "Model Kıyaslama (GFS vs ICON vs GEM)",
-        "🌍 Küresel Endeksler (ENSO Anomali, QBO)"
+        "🌍 Küresel Endeksler (ENSO Anomali, QBO)",
+        "🌀 MJO Analizi & Uydu (OLR, Vel. Pot.)"
     ], horizontal=True)
 
     secilen_veriler = []
@@ -182,7 +183,7 @@ with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
     st.caption(f"📅 Sistemdeki Run: **{get_run_info()}**")
     btn_calistir = st.button("ANALİZİ BAŞLAT", type="primary", use_container_width=True)
     
-    if calisma_modu != "🌍 Küresel Endeksler (ENSO Anomali, QBO)":
+    if calisma_modu not in ["🌍 Küresel Endeksler (ENSO Anomali, QBO)", "🌀 MJO Analizi & Uydu (OLR, Vel. Pot.)"]:
         st.caption(f"Seçili Konum: **{location_name}** ({selected_lat:.2f}, {selected_lon:.2f})")
 
 def add_watermark(fig):
@@ -269,34 +270,54 @@ if btn_calistir:
         
         with st.spinner(f"{secilen_endeks} verisi NOAA'dan çekiliyor..."):
             df = fetch_robust_monthly(url)
-                
             if df is not None and not df.empty:
                 start_date = datetime.now() - pd.DateOffset(years=yil_araligi)
                 df_filtered = df[df['Tarih'] >= start_date]
-                
                 if not df_filtered.empty:
                     fig = go.Figure()
                     colors = ['#FF4B4B' if x >= 0 else '#1E90FF' for x in df_filtered['Değer']]
                     fig.add_trace(go.Bar(x=df_filtered['Tarih'], y=df_filtered['Değer'], marker_color=colors, name=secilen_endeks))
-
                     son_deger = df_filtered.iloc[-1]['Değer']
                     son_tarih = df_filtered.iloc[-1]['Tarih'].strftime("%B %Y")
-                    
                     fig.update_layout(title=f"<b>{secilen_endeks}</b> - Son: {son_deger} ({son_tarih})", template="plotly_dark", height=500, showlegend=False)
                     fig.add_hline(y=0, line_color="white", line_width=1)
-                    
                     if "ENSO" in secilen_endeks:
                         fig.add_hline(y=0.5, line_dash="dash", line_color="red", annotation_text="El Niño (+0.5)")
                         fig.add_hline(y=-0.5, line_dash="dash", line_color="blue", annotation_text="La Niña (-0.5)")
-                    
                     fig = add_watermark(fig)
                     clean_type = clean_filename(secilen_endeks.split(" (")[0])
                     dosya_adi = f"ENDEKS_{clean_type}_{zaman_damgasi}"
                     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': dosya_adi, 'height': 720, 'width': 1280, 'scale': 2}})
-                    
                     if "ENSO" in secilen_endeks:
-                        st.info("ℹ️ **Bilgi:** Grafikteki değerler su sıcaklığı değil, **Anomali (Sapma)** değeridir. **+0.5** üzeri El Niño, **-0.5** altı La Niña bölgesidir.")
-                else:
-                    st.warning("Seçilen tarih aralığı için veri yok.")
-            else:
-                st.error("Veri çekilemedi. NOAA sunucusu yanıt vermiyor olabilir.")
+                        st.info("ℹ️ **Bilgi:** Değerler su sıcaklığı değil, **Anomali (Sapma)** değeridir. **+0.5** üzeri El Niño, **-0.5** altı La Niña bölgesidir.")
+                else: st.warning("Seçilen tarih aralığı için veri yok.")
+            else: st.error("Veri çekilemedi. NOAA sunucusu yanıt vermiyor olabilir.")
+
+    elif calisma_modu == "🌀 MJO Analizi & Uydu (OLR, Vel. Pot.)":
+        tab_mjo, tab_sat = st.tabs(["🌀 MJO & OLR Haritaları", "🛰️ Canlı Uydu & Radar"])
+        
+        with tab_mjo:
+            st.subheader("MJO Faz Diyagramı & OLR Anomalisi")
+            st.write("MJO'nun küresel konumunu ve yağış potansiyelini (OLR) gösteren NOAA GFS Tahminleri.")
+            
+            ts = datetime.now().timestamp()
+            col_m1, col_m2 = st.columns(2)
+            
+            with col_m1:
+                st.write("**1. GFS MJO Faz Diyagramı (Salyangoz)**")
+                st.image(f"https://www.cpc.ncep.noaa.gov/products/precip/CWlink/MJO/forecasts/gefs_phase_20.gif?t={ts}", caption="Kaynak: NOAA CPC - GEFS RMM Forecast", use_container_width=True)
+                st.info("Daire dışına taşan çizgiler MJO'nun aktif olduğunu gösterir. Renkli çizgiler önümüzdeki 14 günlük tahmindir.")
+                
+            with col_m2:
+                st.write("**2. OLR Anomalisi (Yağış Tahmini)**")
+                st.image(f"https://www.cpc.ncep.noaa.gov/products/precip/CWlink/MJO/forcast/gfs_olr_anom_7day.gif?t={ts}", caption="Kaynak: NOAA CPC - OLR Anomaly Forecast", use_container_width=True)
+                st.info("🔵 **Mavi:** Bulutlu/Yağışlı (Konveksiyon) | 🔴 **Kırmızı:** Açık/Kurak (Baskılanma)")
+
+            st.divider()
+            st.write("**3. 200hPa Velocity Potential (Üst Seviye Iraksama)**")
+            st.image(f"https://www.cpc.ncep.noaa.gov/products/precip/CWlink/MJO/forcast/gfs_chi200_anom_7day.gif?t={ts}", caption="CHI200 Anomaly - NOAA CPC", use_container_width=True)
+            st.info("🟢 **Yeşil/Mavi:** Üst seviyede ıraksama (Yerde Alçak Basınç/Yağış desteği).")
+
+        with tab_sat:
+            st.subheader("Canlı Küresel Uydu & Radar (RainViewer)")
+            st.components.v1.iframe("https://www.rainviewer.com/map.html?loc=39.0,35.0,5&oFa=0&oC=1&oU=0&oCS=1&oF=0&oAP=1&c=3&o=83&lm=1&layer=radar&sm=1&sn=1", height=650, scrolling=False)
