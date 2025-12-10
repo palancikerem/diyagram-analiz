@@ -5,6 +5,8 @@ import plotly.graph_objects as go
 from datetime import datetime, timezone, timedelta
 import io
 import warnings
+import os
+import time
 
 warnings.filterwarnings("ignore")
 
@@ -85,14 +87,11 @@ def fetch_robust_monthly(url):
     try:
         headers = {'User-Agent': 'Mozilla/5.0'}
         response = requests.get(url, headers=headers, verify=False, timeout=15)
-        
         data = []
         lines = response.text.split('\n')
-        
         for line in lines:
             parts = line.split()
             if not parts: continue
-            
             if parts[0].isdigit() and 1940 < int(parts[0]) < 2030:
                 year = int(parts[0])
                 for i in range(12):
@@ -100,17 +99,14 @@ def fetch_robust_monthly(url):
                         try:
                             val = float(parts[i+1])
                             if val < -50: val = None 
-                            
                             if val is not None:
-                                data.append({
-                                    "Tarih": datetime(year, i+1, 1), 
-                                    "Değer": val
-                                })
+                                data.append({"Tarih": datetime(year, i+1, 1), "Değer": val})
                         except: continue
-        
         if not data: return None
         return pd.DataFrame(data)
     except: return None
+
+# --- ARAYÜZ ---
 
 with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
     tab1, tab2 = st.tabs(["Listeden Seç", "🔍 Konum Ara (Tüm İlçeler)"])
@@ -142,7 +138,8 @@ with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
     calisma_modu = st.radio("Analiz Modu Seçin:", [
         "📉 GFS Senaryoları (Diyagram)", 
         "Model Kıyaslama (GFS vs ICON vs GEM)",
-        "🌍 Küresel Endeksler (ENSO Anomali, QBO)"
+        "🌍 Küresel Endeksler (ENSO Anomali, QBO)",
+        "🗺️ Özel Model Haritaları (WRF/ECMWF)"
     ], horizontal=True)
 
     secilen_veriler = []
@@ -167,22 +164,30 @@ with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
     secilen_endeks = "ENSO (Niño 3.4 Anomali)"
     yil_araligi = 5
 
+    # MOD AYARLARI
     if calisma_modu == "📉 GFS Senaryoları (Diyagram)":
         secilen_veriler = st.multiselect("Diyagram Verileri:", ["Sıcaklık (850hPa)", "Sıcaklık (2m)", "Kar Yağışı (cm)", "Yağış (mm)", "Rüzgar (10m)", "Basınç"], default=["Sıcaklık (850hPa)", "Yağış (mm)"])
         vurgulu_senaryolar = st.multiselect("Senaryo Vurgula", options=range(0, 31))
+    
     elif calisma_modu == "Model Kıyaslama (GFS vs ICON vs GEM)":
         savas_parametresi = st.selectbox("Veri Seçiniz...", list(COMPARISON_MAP.keys()))
+    
     elif calisma_modu == "🌍 Küresel Endeksler (ENSO Anomali, QBO)":
         col_i1, col_i2 = st.columns([1,1])
         with col_i1: 
             secilen_endeks = st.selectbox("Endeks Seçin:", list(INDEX_CONFIG.keys()))
         with col_i2:
             yil_araligi = st.slider("Geçmiş Veri Aralığı (Yıl)", 1, 30, 5)
+            
+    elif calisma_modu == "🗺️ Özel Model Haritaları (WRF/ECMWF)":
+        st.info("ℹ️ Bu bölümde sistem yöneticisinin yüklediği özel model çıktıları görüntülenir.")
 
     st.caption(f"📅 Sistemdeki Run: **{get_run_info()}**")
-    btn_calistir = st.button("ANALİZİ BAŞLAT", type="primary", use_container_width=True)
     
-    if calisma_modu != "🌍 Küresel Endeksler (ENSO Anomali, QBO)":
+    if calisma_modu != "🗺️ Özel Model Haritaları (WRF/ECMWF)":
+        btn_calistir = st.button("ANALİZİ BAŞLAT", type="primary", use_container_width=True)
+    
+    if calisma_modu not in ["🌍 Küresel Endeksler (ENSO Anomali, QBO)", "🗺️ Özel Model Haritaları (WRF/ECMWF)"]:
         st.caption(f"Seçili Konum: **{location_name}** ({selected_lat:.2f}, {selected_lon:.2f})")
 
 def add_watermark(fig):
@@ -205,7 +210,54 @@ def get_comparison_data(lat, lon):
         return r.json()
     except: return None
 
-if btn_calistir:
+# --- ÇALIŞTIRMA KISMI ---
+
+# 4. MOD: ÖZEL HARİTA OYNATICI (KLASÖRDEN OKUMA)
+if calisma_modu == "🗺️ Özel Model Haritaları (WRF/ECMWF)":
+    
+    # Resimlerin olduğu klasör adı
+    MAP_FOLDER = 'wrf_haritalar'
+    
+    # Klasör yoksa veya boşsa uyarı ver
+    if not os.path.exists(MAP_FOLDER) or not os.listdir(MAP_FOLDER):
+        st.warning(f"⚠️ '{MAP_FOLDER}' klasörü bulunamadı veya içi boş.")
+        st.write("👉 **Yönetici Notu:** GitHub projesinde `wrf_haritalar` isminde bir klasör oluşturun ve harita resimlerini (png/jpg) oraya yükleyin.")
+    else:
+        # Klasördeki resimleri listele ve isme göre sırala
+        map_files = sorted([f for f in os.listdir(MAP_FOLDER) if f.endswith(('.png', '.jpg', '.jpeg'))])
+        
+        if map_files:
+            st.success(f"✅ {len(map_files)} adet harita yüklendi.")
+            
+            # Oynatma Hızı
+            col_speed, col_info = st.columns([1, 2])
+            with col_speed:
+                speed = st.slider("Oynatma Hızı (sn)", 0.1, 2.0, 0.5)
+            
+            # Slider ile seçim
+            idx = st.slider("Saat / Harita Seçimi", 0, len(map_files)-1, 0, format="Harita %d")
+            
+            # Görüntüleme Alanı
+            img_container = st.empty()
+            selected_map_path = os.path.join(MAP_FOLDER, map_files[idx])
+            img_container.image(selected_map_path, caption=f"Dosya: {map_files[idx]}", use_container_width=True)
+            
+            # Butonlar
+            col_b1, col_b2 = st.columns([1, 1])
+            with col_b1:
+                if st.button("▶️ OYNAT", use_container_width=True):
+                    for i in range(len(map_files)):
+                        current_file = os.path.join(MAP_FOLDER, map_files[i])
+                        img_container.image(current_file, caption=f"Oynatılıyor: {map_files[i]}", use_container_width=True)
+                        time.sleep(speed)
+                    # Döngü bitince son kareyi göster
+                    st.info("Animasyon bitti.")
+                    
+        else:
+            st.warning("Klasörde geçerli resim dosyası bulunamadı.")
+
+# DİĞER MODLAR
+elif 'btn_calistir' in locals() and btn_calistir:
     zaman_damgasi = datetime.now().strftime("%Y-%m-%d_%H-%M")
     clean_loc = clean_filename(location_name)
 
@@ -266,37 +318,27 @@ if btn_calistir:
     elif calisma_modu == "🌍 Küresel Endeksler (ENSO Anomali, QBO)":
         config = INDEX_CONFIG[secilen_endeks]
         url = config["url"]
-        
         with st.spinner(f"{secilen_endeks} verisi NOAA'dan çekiliyor..."):
             df = fetch_robust_monthly(url)
-                
             if df is not None and not df.empty:
                 start_date = datetime.now() - pd.DateOffset(years=yil_araligi)
                 df_filtered = df[df['Tarih'] >= start_date]
-                
                 if not df_filtered.empty:
                     fig = go.Figure()
                     colors = ['#FF4B4B' if x >= 0 else '#1E90FF' for x in df_filtered['Değer']]
                     fig.add_trace(go.Bar(x=df_filtered['Tarih'], y=df_filtered['Değer'], marker_color=colors, name=secilen_endeks))
-
                     son_deger = df_filtered.iloc[-1]['Değer']
                     son_tarih = df_filtered.iloc[-1]['Tarih'].strftime("%B %Y")
-                    
                     fig.update_layout(title=f"<b>{secilen_endeks}</b> - Son: {son_deger} ({son_tarih})", template="plotly_dark", height=500, showlegend=False)
                     fig.add_hline(y=0, line_color="white", line_width=1)
-                    
                     if "ENSO" in secilen_endeks:
                         fig.add_hline(y=0.5, line_dash="dash", line_color="red", annotation_text="El Niño (+0.5)")
                         fig.add_hline(y=-0.5, line_dash="dash", line_color="blue", annotation_text="La Niña (-0.5)")
-                    
                     fig = add_watermark(fig)
                     clean_type = clean_filename(secilen_endeks.split(" (")[0])
                     dosya_adi = f"ENDEKS_{clean_type}_{zaman_damgasi}"
                     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': dosya_adi, 'height': 720, 'width': 1280, 'scale': 2}})
-                    
                     if "ENSO" in secilen_endeks:
-                        st.info("ℹ️ **Bilgi:** Grafikteki değerler su sıcaklığı değil, **Anomali (Sapma)** değeridir. **+0.5** üzeri El Niño, **-0.5** altı La Niña bölgesidir.")
-                else:
-                    st.warning("Seçilen tarih aralığı için veri yok.")
-            else:
-                st.error("Veri çekilemedi. NOAA sunucusu yanıt vermiyor olabilir.")
+                        st.info("ℹ️ **Bilgi:** Değerler su sıcaklığı değil, **Anomali (Sapma)** değeridir. **+0.5** üzeri El Niño, **-0.5** altı La Niña bölgesidir.")
+                else: st.warning("Seçilen tarih aralığı için veri yok.")
+            else: st.error("Veri çekilemedi. NOAA sunucusu yanıt vermiyor olabilir.")
