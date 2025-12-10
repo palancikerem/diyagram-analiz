@@ -2,10 +2,12 @@ import streamlit as st
 import requests
 import pandas as pd
 import plotly.graph_objects as go
+import numpy as np
 from datetime import datetime, timezone, timedelta
 import io
 import warnings
 
+# SSL ve Uyarıları Kapat
 warnings.filterwarnings("ignore")
 
 st.set_page_config(
@@ -63,8 +65,7 @@ def clean_filename(text):
 def get_run_info():
     now_utc = datetime.now(timezone.utc)
     hour = now_utc.hour
-    minute = now_utc.minute
-    current_minutes = hour * 60 + minute
+    current_minutes = hour * 60 + now_utc.minute
     if current_minutes >= (3 * 60 + 30) and current_minutes < (9 * 60 + 30): return "00Z (Sabah)"
     elif current_minutes >= (9 * 60 + 30) and current_minutes < (15 * 60 + 30): return "06Z (Öğle)"
     elif current_minutes >= (15 * 60 + 30) and current_minutes < (21 * 60 + 30): return "12Z (Akşam)"
@@ -80,6 +81,46 @@ def search_location(query):
         return []
     except: return []
 
+# --- SAĞLAMLAŞTIRILMIŞ MJO VERİ ÇEKME ---
+@st.cache_data(ttl=3600)
+def get_mjo_data():
+    """BOM Avustralya'dan MJO RMM verilerini çeker ve parse eder."""
+    url = "http://www.bom.gov.au/climate/mjo/graphics/rmm.74toRealtime.txt"
+    try:
+        r = requests.get(url, timeout=10)
+        r.raise_for_status()
+        
+        # Pandas ile okuma (skiprows=2, boşluk ayırıcı)
+        df = pd.read_csv(
+            io.StringIO(r.text), 
+            sep=r'\s+', 
+            skiprows=2, 
+            header=None,
+            names=["Year", "Month", "Day", "RMM1", "RMM2", "Phase", "Amp", "Source"],
+            on_bad_lines='skip'
+        )
+        
+        # Tarih oluştur
+        df['Tarih'] = pd.to_datetime(df[['Year', 'Month', 'Day']])
+        return df[['Tarih', 'RMM1', 'RMM2', 'Phase', 'Amp']]
+    except:
+        return None
+
+# --- HARİTA GÖRÜNTÜSÜ ÇEKME (HOTLINK BYPASS) ---
+@st.cache_data(ttl=3600)
+def fetch_image_bytes(url):
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+            'Referer': 'https://www.cpc.ncep.noaa.gov/'
+        }
+        r = requests.get(url, headers=headers, verify=False, timeout=15)
+        if r.status_code == 200:
+            return r.content
+        return None
+    except: return None
+
+# --- AYLIK VERİ ÇEKME MOTORU (ENSO / QBO) ---
 @st.cache_data(ttl=86400)
 def fetch_robust_monthly(url):
     try:
@@ -102,20 +143,6 @@ def fetch_robust_monthly(url):
                         except: continue
         if not data: return None
         return pd.DataFrame(data)
-    except: return None
-
-# RESİMLERİ GÜVENLİ ÇEKME FONKSİYONU (HOTLINK KORUMASINI AŞAR)
-@st.cache_data(ttl=3600)
-def fetch_image_bytes(url):
-    try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Referer': 'https://www.cpc.ncep.noaa.gov/'
-        }
-        r = requests.get(url, headers=headers, verify=False, timeout=10)
-        if r.status_code == 200:
-            return r.content
-        return None
     except: return None
 
 with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
@@ -149,7 +176,7 @@ with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
         "📉 GFS Senaryoları (Diyagram)", 
         "Model Kıyaslama (GFS vs ICON vs GEM)",
         "🌍 Küresel Endeksler (ENSO Anomali, QBO)",
-        "🌀 MJO Analizi (Salyangoz, OLR, VP200)"
+        "🌀 MJO Analizi (Kendi Çizimimiz + Haritalar)"
     ], horizontal=True)
 
     secilen_veriler = []
@@ -173,6 +200,7 @@ with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
     savas_parametresi = "Sıcaklık (2m)"
     secilen_endeks = "ENSO (Niño 3.4 Anomali)"
     yil_araligi = 5
+    mjo_gun = 40
 
     if calisma_modu == "📉 GFS Senaryoları (Diyagram)":
         secilen_veriler = st.multiselect("Diyagram Verileri:", ["Sıcaklık (850hPa)", "Sıcaklık (2m)", "Kar Yağışı (cm)", "Yağış (mm)", "Rüzgar (10m)", "Basınç"], default=["Sıcaklık (850hPa)", "Yağış (mm)"])
@@ -185,11 +213,13 @@ with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
             secilen_endeks = st.selectbox("Endeks Seçin:", list(INDEX_CONFIG.keys()))
         with col_i2:
             yil_araligi = st.slider("Geçmiş Veri Aralığı (Yıl)", 1, 30, 5)
+    elif calisma_modu == "🌀 MJO Analizi (Kendi Çizimimiz + Haritalar)":
+        mjo_gun = st.slider("Faz Diyagramı - Son Kaç Gün?", 10, 90, 40)
 
     st.caption(f"📅 Sistemdeki Run: **{get_run_info()}**")
     btn_calistir = st.button("ANALİZİ BAŞLAT", type="primary", use_container_width=True)
     
-    if calisma_modu not in ["🌍 Küresel Endeksler (ENSO Anomali, QBO)", "🌀 MJO Analizi (Salyangoz, OLR, VP200)"]:
+    if calisma_modu not in ["🌍 Küresel Endeksler (ENSO Anomali, QBO)", "🌀 MJO Analizi (Kendi Çizimimiz + Haritalar)"]:
         st.caption(f"Seçili Konum: **{location_name}** ({selected_lat:.2f}, {selected_lon:.2f})")
 
 def add_watermark(fig):
@@ -273,7 +303,6 @@ if btn_calistir:
     elif calisma_modu == "🌍 Küresel Endeksler (ENSO Anomali, QBO)":
         config = INDEX_CONFIG[secilen_endeks]
         url = config["url"]
-        
         with st.spinner(f"{secilen_endeks} verisi NOAA'dan çekiliyor..."):
             df = fetch_robust_monthly(url)
             if df is not None and not df.empty:
@@ -299,59 +328,101 @@ if btn_calistir:
                 else: st.warning("Seçilen tarih aralığı için veri yok.")
             else: st.error("Veri çekilemedi. NOAA sunucusu yanıt vermiyor olabilir.")
 
-    elif calisma_modu == "🌀 MJO Analizi (Salyangoz, OLR, VP200)":
+    elif calisma_modu == "🌀 MJO Analizi (Kendi Çizimimiz + Haritalar)":
         
-        st.subheader("MJO Analiz Haritaları (NOAA CPC)")
-        st.write("Madden-Julian Salınımı (MJO) küresel yağış ve sıcaklık döngülerini etkiler. Aşağıdaki haritalar NOAA sunucularından anlık olarak çekilmektedir.")
-        st.caption("Not: Eğer haritalar boş görünürse NOAA sunucularında güncelleme yapılıyor olabilir.")
+        with st.spinner("MJO verileri Avustralya Meteoroloji Bürosu'ndan (BOM) alınıyor..."):
+            df_mjo = get_mjo_data()
+            
+            if df_mjo is not None and not df_mjo.empty:
+                # Son N günü al
+                df_plot = df_mjo.iloc[-mjo_gun:].reset_index(drop=True)
+                
+                # --- PLOTLY İLE KENDİ ÇİZDİĞİMİZ SALYANGOZ ---
+                fig = go.Figure()
+                
+                # Arka plan daireleri (1, 2, 3 birim)
+                for r in [1, 2, 3]:
+                    fig.add_shape(type="circle", xref="x", yref="y", x0=-r, y0=-r, x1=r, y1=r, line_color="grey", line_dash="dot", opacity=0.3)
+                
+                # Eksenler
+                fig.add_hline(y=0, line_color="white", opacity=0.2)
+                fig.add_vline(x=0, line_color="white", opacity=0.2)
+                
+                # Faz Bölgeleri (Metinler)
+                regions = [
+                    (1.5, -1.5, "Batı Pasifik (5)"), (-1.5, -1.5, "Hint Okyanusu (2-3)"), 
+                    (-1.5, 1.5, "Batı Yarıküre (8-1)"), (1.5, 1.5, "Deniz Kıtası (4-5)")
+                ]
+                for x, y, text in regions:
+                    fig.add_annotation(x=x, y=y, text=text, showarrow=False, font=dict(size=12, color="rgba(255,255,255,0.4)"))
 
-        ts = datetime.now().strftime("%Y%m%d%H") 
+                # Renkli Çizgi (Zaman gradienti)
+                # Scatter ile noktaları çiziyoruz
+                colors = np.linspace(0, 1, len(df_plot))
+                fig.add_trace(go.Scatter(
+                    x=df_plot['RMM1'], y=df_plot['RMM2'],
+                    mode='lines+markers',
+                    line=dict(color='gray', width=1), # Çizgiler ince gri
+                    marker=dict(
+                        size=10,
+                        color=colors,
+                        colorscale='Turbo', # Mavi (Eski) -> Kırmızı (Yeni)
+                        colorbar=dict(title="Gün"),
+                        showscale=True
+                    ),
+                    text=df_plot['Tarih'].dt.strftime('%d %b'),
+                    hovertemplate="<b>%{text}</b><br>RMM1: %{x:.2f}<br>RMM2: %{y:.2f}<extra></extra>"
+                ))
+                
+                # Başla - Bitir Etiketleri
+                fig.add_annotation(x=df_plot['RMM1'].iloc[0], y=df_plot['RMM2'].iloc[0], text="BAŞLA", ax=20, ay=20, arrowcolor="cyan", font=dict(color="cyan"))
+                fig.add_annotation(x=df_plot['RMM1'].iloc[-1], y=df_plot['RMM2'].iloc[-1], text="SON", ax=20, ay=20, arrowcolor="red", font=dict(color="red", size=14, weight="bold"))
+
+                fig.update_layout(
+                    title=f"MJO Faz Diyagramı (Son {mjo_gun} Gün)",
+                    xaxis=dict(title="RMM1", range=[-4, 4], zeroline=False),
+                    yaxis=dict(title="RMM2", range=[-4, 4], zeroline=False),
+                    width=700, height=700,
+                    template="plotly_dark",
+                    showlegend=False
+                )
+                fig = add_watermark(fig)
+                
+                col_plt, col_info = st.columns([2, 1])
+                with col_plt:
+                    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': f'MJO_PHASE_{zaman_damgasi}', 'scale': 2}})
+                
+                with col_info:
+                    st.info("""
+                    **Nasıl Okunur?**
+                    * **Daire İçi:** MJO Etkisiz (Nötr)
+                    * **Daire Dışı:** MJO Aktif
+                    * **Faz 2-3:** Hint Okyanusu (Türkiye'ye yağış desteği verebilir)
+                    * **Faz 8-1:** Batı Yarıküre/Afrika
+                    """)
+            
+            else:
+                st.error("MJO verisi çekilemedi.")
+
+        # --- HARİTALAR (OLR & VP200) ---
+        st.divider()
+        st.subheader("Küresel MJO Analiz Haritaları (NOAA CPC)")
         
         col_m1, col_m2 = st.columns(2)
+        ts = datetime.now().timestamp() # Cache bozmak için
         
-        # MJO PHASE DIAGRAM
         with col_m1:
-            st.markdown("#### 1. MJO Faz Diyagramı (Salyangoz)")
-            url_phase = "https://www.cpc.ncep.noaa.gov/products/precip/CWlink/MJO/forecasts/gefs_phase_20.gif"
-            img_bytes = fetch_image_bytes(url_phase)
-            if img_bytes:
-                st.image(img_bytes, caption="Kaynak: NOAA CPC - GEFS RMM", use_container_width=True)
-            else:
-                st.error("Görüntü çekilemedi (NOAA Kaynaklı)")
-            
-            st.info("""
-            **Nasıl Okunur?**
-            * **Daire İçi:** MJO Etkisiz (Nötr)
-            * **Daire Dışı:** MJO Aktif
-            * **Faz 2-3:** Hint Okyanusu (Türkiye'ye yağış desteği verebilir)
-            * **Faz 8-1:** Batı Yarıküre/Afrika
-            """)
-
-        # OLR ANOMALY
-        with col_m2:
-            st.markdown("#### 2. OLR Anomalisi (Yağış Tahmini)")
+            st.markdown("#### 1. OLR Anomalisi (Yağış Tahmini)")
             url_olr = "https://www.cpc.ncep.noaa.gov/products/precip/CWlink/MJO/forcast/gfs_olr_anom_7day.gif"
-            img_bytes_olr = fetch_image_bytes(url_olr)
-            if img_bytes_olr:
-                st.image(img_bytes_olr, caption="Kaynak: NOAA CPC - OLR Forecast", use_container_width=True)
-            else:
-                st.error("Görüntü çekilemedi (NOAA Kaynaklı)")
-                
-            st.info("""
-            **OLR (Giden Uzun Dalga Radyasyonu):**
-            * 🔵 **Mavi:** Bulutlu, Konvektif, Yağışlı (Aktif MJO)
-            * 🔴 **Kırmızı:** Açık hava, Kurak, Baskılanmış (Pasif MJO)
-            """)
-
-        st.divider()
-        
-        # CHI200 (VELOCITY POTENTIAL)
-        st.markdown("#### 3. 200hPa Velocity Potential (Üst Seviye Iraksama)")
-        url_vp = "https://www.cpc.ncep.noaa.gov/products/precip/CWlink/MJO/forcast/gfs_chi200_anom_7day.gif"
-        img_bytes_vp = fetch_image_bytes(url_vp)
-        if img_bytes_vp:
-            st.image(img_bytes_vp, caption="Kaynak: NOAA CPC - CHI200 Anomaly", use_container_width=True)
-        else:
-            st.error("Görüntü çekilemedi (NOAA Kaynaklı)")
+            img_olr = fetch_image_bytes(url_olr)
+            if img_olr:
+                st.image(img_olr, caption="Mavi: Yağışlı | Kırmızı: Kurak", use_container_width=True)
+            else: st.warning("Harita yüklenemedi.")
             
-        st.success("🟢 **Yeşil/Mavi Alanlar:** Atmosferin üst seviyesinde hava dışarı yayılıyor (Iraksama). Bu, yer seviyesinde havanın yükselmesini ve **Alçak Basınç/Yağış** oluşumunu destekler.")
+        with col_m2:
+            st.markdown("#### 2. 200hPa Hız Potansiyeli (VP200)")
+            url_vp = "https://www.cpc.ncep.noaa.gov/products/precip/CWlink/MJO/forcast/gfs_chi200_anom_7day.gif"
+            img_vp = fetch_image_bytes(url_vp)
+            if img_vp:
+                st.image(img_vp, caption="Yeşil: Iraksama (Yağış Desteği)", use_container_width=True)
+            else: st.warning("Harita yüklenemedi.")
