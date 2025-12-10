@@ -6,7 +6,6 @@ from datetime import datetime, timezone, timedelta
 import io
 import warnings
 
-# SSL sertifika hatalarını görmezden gel
 warnings.filterwarnings("ignore")
 
 st.set_page_config(
@@ -81,10 +80,8 @@ def search_location(query):
         return []
     except: return []
 
-# --- AYLIK VERİ ÇEKME MOTORU (ENSO / QBO) ---
 @st.cache_data(ttl=86400)
 def fetch_robust_monthly(url):
-    """NOAA metin dosyalarından aylık verileri çeker."""
     try:
         headers = {'User-Agent': 'Mozilla/5.0'}
         response = requests.get(url, headers=headers, verify=False, timeout=15)
@@ -96,15 +93,12 @@ def fetch_robust_monthly(url):
             parts = line.split()
             if not parts: continue
             
-            # Satır bir yıl ile başlıyorsa veridir
             if parts[0].isdigit() and 1940 < int(parts[0]) < 2030:
                 year = int(parts[0])
-                # Sonraki sütunlar aylar
                 for i in range(12):
                     if i+1 < len(parts):
                         try:
                             val = float(parts[i+1])
-                            # Hata kodu kontrolü (-99.99 veya -999.0)
                             if val < -50: val = None 
                             
                             if val is not None:
@@ -145,7 +139,6 @@ with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
 
     st.divider()
 
-    # MODLAR (SADELEŞTİRİLDİ)
     calisma_modu = st.radio("Analiz Modu Seçin:", [
         "📉 GFS Senaryoları (Diyagram)", 
         "Model Kıyaslama (GFS vs ICON vs GEM)",
@@ -165,8 +158,6 @@ with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
         "Jeopotansiyel Yükseklik (500hPa)": {"api": "geopotential_height_500hPa", "unit": "m"}
     }
     
-    # SADECE ENSO (ANOMALİ) VE QBO KALDI
-    # ENSO URL değiştirildi: nina34.anom.data (Anomali verisi)
     INDEX_CONFIG = {
         "ENSO (Niño 3.4 Anomali)": {"url": "https://psl.noaa.gov/data/correlation/nina34.anom.data"},
         "QBO (Quasi-Biennial)": {"url": "https://psl.noaa.gov/data/correlation/qbo.data"}
@@ -194,21 +185,8 @@ with st.expander("📍 Konum ve Analiz Ayarları", expanded=True):
     if calisma_modu != "🌍 Küresel Endeksler (ENSO Anomali, QBO)":
         st.caption(f"Seçili Konum: **{location_name}** ({selected_lat:.2f}, {selected_lon:.2f})")
 
-# --- WATERMARK (FİLİGRAN) FONKSİYONU ---
 def add_watermark(fig):
-    fig.add_annotation(
-        text="Analiz: KeremPalancı",
-        xref="paper", yref="paper",
-        x=0.99, y=0.01, # Sağ alt köşe
-        showarrow=False,
-        font=dict(
-            size=12,
-            color="rgba(255, 255, 255, 0.5)", # Yarı saydam beyaz
-            family="Arial"
-        ),
-        bgcolor="rgba(0,0,0,0.5)", # Yarı saydam siyah arka plan
-        borderpad=4
-    )
+    fig.add_annotation(text="Analiz: KeremPalancı", xref="paper", yref="paper", x=0.99, y=0.01, showarrow=False, font=dict(size=12, color="rgba(255, 255, 255, 0.5)", family="Arial"), bgcolor="rgba(0,0,0,0.5)", borderpad=4)
     return fig
 
 @st.cache_data(ttl=3600)
@@ -231,7 +209,6 @@ if btn_calistir:
     zaman_damgasi = datetime.now().strftime("%Y-%m-%d_%H-%M")
     clean_loc = clean_filename(location_name)
 
-    # --- 1. MOD: DİYAGRAM ---
     if calisma_modu == "📉 GFS Senaryoları (Diyagram)":
         if not secilen_veriler: st.error("Lütfen en az bir veri seçin.")
         else:
@@ -264,19 +241,11 @@ if btn_calistir:
                             fig.add_trace(go.Scatter(x=time, y=mean_val, mode='lines', line=dict(color=main_c, width=3.0), name="ORTALAMA", showlegend=False, hoverinfo='skip'))
                             
                             if "Sıcaklık" in secim: fig.add_hline(y=0, line_dash="dash", line_color="orange", opacity=0.5)
-                            
                             fig.update_layout(title=f"{location_name} - {secim}", template="plotly_dark", height=500, margin=dict(l=2, r=2, t=30, b=5), hovermode="x unified")
-                            
-                            # FİLİGRAN EKLE
                             fig = add_watermark(fig)
-                            
-                            # PNG İNDİRME AYARLARI
-                            clean_type = clean_filename(secim)
-                            dosya_adi = f"{clean_loc}_{clean_type}_{zaman_damgasi}"
-                            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': dosya_adi, 'height': 720, 'width': 1280, 'scale': 2}})
+                            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': f'{clean_loc}_{secim}_{zaman_damgasi}', 'height': 720, 'width': 1280, 'scale': 2}})
                 else: st.error("Veri alınamadı.")
 
-    # --- 2. MOD: KIYASLAMA ---
     elif calisma_modu == "Model Kıyaslama (GFS vs ICON vs GEM)":
         with st.spinner(f'{location_name} için modeller kıyaslanıyor...'):
             veri = get_comparison_data(selected_lat, selected_lon)
@@ -289,19 +258,11 @@ if btn_calistir:
                 for mod, c in [('gfs_seamless', 'red'), ('icon_seamless', 'green'), ('gem_global', 'blue')]:
                     if f'{api_key}_{mod}' in hourly:
                         fig.add_trace(go.Scatter(x=zaman, y=hourly[f'{api_key}_{mod}'], mode='lines', name=mod.split('_')[0].upper(), line=dict(color=c, width=2)))
-                
                 fig.update_layout(title=f"{location_name} - {savas_parametresi}", template="plotly_dark", height=500, hovermode="x unified", legend=dict(orientation="h", y=1.1))
-                
-                # FİLİGRAN EKLE
                 fig = add_watermark(fig)
-                
-                # PNG İNDİRME AYARLARI
-                clean_type = clean_filename(savas_parametresi)
-                dosya_adi = f"KIYAS_{clean_loc}_{clean_type}_{zaman_damgasi}"
-                st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': dosya_adi, 'height': 720, 'width': 1280, 'scale': 2}})
+                st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': f'KIYAS_{clean_loc}_{zaman_damgasi}', 'scale': 2}})
             else: st.error("Model verisi çekilemedi.")
     
-    # --- 3. MOD: ENSO (ANOMALİ) VE QBO ---
     elif calisma_modu == "🌍 Küresel Endeksler (ENSO Anomali, QBO)":
         config = INDEX_CONFIG[secilen_endeks]
         url = config["url"]
@@ -328,10 +289,7 @@ if btn_calistir:
                         fig.add_hline(y=0.5, line_dash="dash", line_color="red", annotation_text="El Niño (+0.5)")
                         fig.add_hline(y=-0.5, line_dash="dash", line_color="blue", annotation_text="La Niña (-0.5)")
                     
-                    # FİLİGRAN EKLE
                     fig = add_watermark(fig)
-                    
-                    # PNG İNDİRME AYARLARI
                     clean_type = clean_filename(secilen_endeks.split(" (")[0])
                     dosya_adi = f"ENDEKS_{clean_type}_{zaman_damgasi}"
                     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': dosya_adi, 'height': 720, 'width': 1280, 'scale': 2}})
